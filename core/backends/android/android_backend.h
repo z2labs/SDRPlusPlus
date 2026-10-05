@@ -14,5 +14,8 @@ namespace backend {
     extern const std::vector<DevVIDPID> HYDRASDR_VIDPIDS;
     extern const std::vector<DevVIDPID> RTL_SDR_VIDPIDS;
 
+    // Default UI scale derived from the display density
+    float getDisplayScale();
+
     int getDeviceFD(int& vid, int& pid, const std::vector<DevVIDPID>& allowedVidPids);
 }

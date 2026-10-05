@@ -1,3 +1,4 @@
+#include <gui/touch.h>
 #include <gui/menus/display.h>
 #include <imgui.h>
 #include <gui/gui.h>
@@ -105,11 +106,25 @@ namespace displaymenu {
         updateFFTSpeeds();
 
         // Define and load UI scales
+#ifdef __ANDROID__
+        uiScales.define(0.0f, "Auto", 0.0f);
+        uiScales.define(1.5f, "150%", 1.5f);
+        uiScales.define(2.0f, "200%", 2.0f);
+        uiScales.define(2.5f, "250%", 2.5f);
+        uiScales.define(3.0f, "300%", 3.0f);
+        uiScales.define(3.5f, "350%", 3.5f);
+        uiScales.define(4.0f, "400%", 4.0f);
+#else
         uiScales.define(1.0f, "100%", 1.0f);
         uiScales.define(2.0f, "200%", 2.0f);
         uiScales.define(3.0f, "300%", 3.0f);
         uiScales.define(4.0f, "400%", 4.0f);
-        uiScaleId = uiScales.valueId(style::uiScale);
+#endif
+        {
+            // The stored setting, not the effective scale (which differs in Auto mode)
+            float cfgScale = core::configManager.conf["uiScale"];
+            uiScaleId = uiScales.valueExists(cfgScale) ? uiScales.valueId(cfgScale) : 0;
+        }
     }
 
     void setWaterfallShown(bool shown) {
@@ -200,6 +215,15 @@ namespace displaymenu {
             core::configManager.release(true);
             restartRequired = true;
         }
+
+#ifdef __ANDROID__
+        if (ImGui::Checkbox("Touch-optimised UI##sdrpp_touch_mode", &touch::enabled)) {
+            core::configManager.acquire();
+            core::configManager.conf["touchMode"] = touch::enabled;
+            core::configManager.release(true);
+            restartRequired = true;
+        }
+#endif
 
         ImGui::LeftLabel("FFT Framerate");
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());

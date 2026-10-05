@@ -1,3 +1,4 @@
+#include <gui/touch.h>
 #include <gui/main_window.h>
 #include <gui/gui.h>
 #include "imgui.h"
@@ -331,7 +332,13 @@ void MainWindow::draw() {
 
     // To Bar
     // ImGui::BeginChild("TopBarChild", ImVec2(0, 49.0f * style::uiScale), false, ImGuiWindowFlags_HorizontalScrollbar);
-    ImVec2 btnSize(30 * style::uiScale, 30 * style::uiScale);
+    ImVec2 winSize = ImGui::GetWindowSize();
+    bool narrow = touch::narrow(winSize); // portrait phone: two-row top bar, menu above the waterfall
+    // Landscape phone: the desktop top bar does not fit, use a single compact row instead
+    bool compactBar = touch::enabled && !narrow && winSize.x < 1250.0f * style::uiScale;
+    float btnBase = (touch::enabled ? 40.0f : 30.0f) * style::uiScale;
+    ImVec2 btnSize(btnBase, btnBase);
+    float ctrlColW = (touch::enabled ? 84.0f : 60.0f) * style::uiScale;
     ImGui::PushID(ImGui::GetID("sdrpp_menu_btn"));
     if (ImGui::ImageButton(icons::MENU, btnSize, ImVec2(0, 0), ImVec2(1, 1), 5, ImVec4(0, 0, 0, 0), textCol) || ImGui::IsKeyPressed(ImGuiKey_Menu, false)) {
         showMenu = !showMenu;
@@ -370,61 +377,121 @@ void MainWindow::draw() {
     ImGui::SameLine();
     float origY = ImGui::GetCursorPosY();
 
-    sigpath::sinkManager.showVolumeSlider(gui::waterfall.selectedVFO, "##_sdrpp_main_volume_", 248 * style::uiScale, btnSize.x, 5, true);
-
-    ImGui::SameLine();
-
-    ImGui::SetCursorPosY(origY);
-    gui::freqSelect.draw();
-
-    ImGui::SameLine();
-
-    ImGui::SetCursorPosY(origY);
-    if (tuningMode == tuner::TUNER_MODE_CENTER) {
-        ImGui::PushID(ImGui::GetID("sdrpp_ena_st_btn"));
-        if (ImGui::ImageButton(icons::CENTER_TUNING, btnSize, ImVec2(0, 0), ImVec2(1, 1), 5, ImVec4(0, 0, 0, 0), textCol)) {
-            tuningMode = tuner::TUNER_MODE_NORMAL;
-            gui::waterfall.VFOMoveSingleClick = false;
-            core::configManager.acquire();
-            core::configManager.conf["centerTuning"] = false;
-            core::configManager.release(true);
+    auto drawTuningModeButton = [&]() {
+        if (tuningMode == tuner::TUNER_MODE_CENTER) {
+            ImGui::PushID(ImGui::GetID("sdrpp_ena_st_btn"));
+            if (ImGui::ImageButton(icons::CENTER_TUNING, btnSize, ImVec2(0, 0), ImVec2(1, 1), 5, ImVec4(0, 0, 0, 0), textCol)) {
+                tuningMode = tuner::TUNER_MODE_NORMAL;
+                gui::waterfall.VFOMoveSingleClick = false;
+                core::configManager.acquire();
+                core::configManager.conf["centerTuning"] = false;
+                core::configManager.release(true);
+            }
+            ImGui::PopID();
         }
-        ImGui::PopID();
-    }
-    else { // TODO: Might need to check if there even is a device
-        ImGui::PushID(ImGui::GetID("sdrpp_dis_st_btn"));
-        if (ImGui::ImageButton(icons::NORMAL_TUNING, btnSize, ImVec2(0, 0), ImVec2(1, 1), 5, ImVec4(0, 0, 0, 0), textCol)) {
-            tuningMode = tuner::TUNER_MODE_CENTER;
-            gui::waterfall.VFOMoveSingleClick = true;
-            tuner::tune(tuner::TUNER_MODE_CENTER, gui::waterfall.selectedVFO, gui::freqSelect.frequency);
-            core::configManager.acquire();
-            core::configManager.conf["centerTuning"] = true;
-            core::configManager.release(true);
+        else { // TODO: Might need to check if there even is a device
+            ImGui::PushID(ImGui::GetID("sdrpp_dis_st_btn"));
+            if (ImGui::ImageButton(icons::NORMAL_TUNING, btnSize, ImVec2(0, 0), ImVec2(1, 1), 5, ImVec4(0, 0, 0, 0), textCol)) {
+                tuningMode = tuner::TUNER_MODE_CENTER;
+                gui::waterfall.VFOMoveSingleClick = true;
+                tuner::tune(tuner::TUNER_MODE_CENTER, gui::waterfall.selectedVFO, gui::freqSelect.frequency);
+                core::configManager.acquire();
+                core::configManager.conf["centerTuning"] = true;
+                core::configManager.release(true);
+            }
+            ImGui::PopID();
         }
-        ImGui::PopID();
+    };
+
+    // Width of the frequency display at the big font, used to shrink it when space is short
+    ImGui::PushFont(style::bigFont);
+    ImVec2 digitSz = ImGui::CalcTextSize("0");
+    float freqNeed = (12.0f * digitSz.x) + (3.0f * ImGui::CalcTextSize(".").x) + 15.0f;
+    ImGui::PopFont();
+    float padX = ImGui::GetStyle().WindowPadding.x;
+    float btnCenterY = origY + (btnSize.y / 2.0f) + 5.0f;
+
+    if (compactBar) {
+        // menu, play, tuning mode, volume, frequency (scaled to the rest of the row)
+        drawTuningModeButton();
+        ImGui::SameLine();
+        sigpath::sinkManager.showVolumeSlider(gui::waterfall.selectedVFO, "##_sdrpp_main_volume_", 150 * style::uiScale, btnSize.x, 5, true);
+        ImGui::SameLine();
+        float fscale = std::min<float>(1.0f, (winSize.x - ImGui::GetCursorPosX() - padX) / freqNeed);
+        ImGui::SetWindowFontScale(fscale);
+        ImGui::SetCursorPosY(btnCenterY - ceilf(15 * style::uiScale) - 5);
+        gui::freqSelect.draw();
+        ImGui::SetWindowFontScale(1.0f);
+        ImGui::SetCursorPosY(std::max<float>(origY + btnSize.y + 10.0f, btnCenterY + (digitSz.y * fscale / 2.0f)) + ImGui::GetStyle().ItemSpacing.y);
+    }
+    else if (!narrow) {
+        sigpath::sinkManager.showVolumeSlider(gui::waterfall.selectedVFO, "##_sdrpp_main_volume_", (touch::enabled ? 160 : 248) * style::uiScale, btnSize.x, 5, true);
+
+        ImGui::SameLine();
+
+        // Keep the digits centred on the (possibly taller) touch buttons
+        ImGui::SetCursorPosY(origY + (btnSize.y - 30.0f * style::uiScale) / 2.0f);
+        gui::freqSelect.draw();
+
+        ImGui::SameLine();
+
+        ImGui::SetCursorPosY(origY);
+        drawTuningModeButton();
+    }
+    else {
+        // Row 1: menu, play, tuning mode, volume (rest of the width)
+        drawTuningModeButton();
+        ImGui::SameLine();
+        float volW = winSize.x - ImGui::GetCursorPosX() - ImGui::GetStyle().WindowPadding.x;
+        sigpath::sinkManager.showVolumeSlider(gui::waterfall.selectedVFO, "##_sdrpp_main_volume_", volW, btnSize.x, 5, false);
+
+        // Row 2: frequency (shrunk to fit if needed), SNR meter if there is room
+        float row2Y = ImGui::GetCursorPosY();
+        float avail = winSize.x - ImGui::GetCursorPosX() - padX;
+        float fscale = std::min<float>(1.0f, avail / freqNeed);
+        float digH = digitSz.y * fscale;
+
+        ImGui::SetWindowFontScale(fscale);
+        ImGui::SetCursorPosY(row2Y + (digH / 2.0f) - ceilf(15 * style::uiScale) - 5);
+        gui::freqSelect.draw();
+        ImGui::SetWindowFontScale(1.0f);
+
+        ImGui::SameLine();
+        float snrW = winSize.x - ImGui::GetCursorPosX() - padX;
+        if (snrW > 150.0f * style::uiScale) {
+            ImGui::SetCursorPosY(row2Y + (digH / 2.0f) - (13.0f * style::uiScale));
+            ImGui::SetNextItemWidth(snrW);
+            ImGui::SNRMeter((vfo != NULL) ? gui::waterfall.selectedVFOSNR : 0);
+        }
+        else {
+            ImGui::NewLine();
+        }
+        ImGui::SetCursorPosY(row2Y + digH + ImGui::GetStyle().ItemSpacing.y);
     }
 
-    ImGui::SameLine();
+    if (!narrow && !compactBar) {
+        ImGui::SameLine();
 
-    int snrOffset = 87.0f * style::uiScale;
-    int snrWidth = std::clamp<int>(ImGui::GetWindowSize().x - ImGui::GetCursorPosX() - snrOffset, 100.0f * style::uiScale, 300.0f * style::uiScale);
-    int snrPos = std::max<int>(ImGui::GetWindowSize().x - (snrWidth + snrOffset), ImGui::GetCursorPosX());
+        int snrOffset = 87.0f * style::uiScale;
+        int snrWidth = std::clamp<int>(ImGui::GetWindowSize().x - ImGui::GetCursorPosX() - snrOffset, 100.0f * style::uiScale, 300.0f * style::uiScale);
+        int snrPos = std::max<int>(ImGui::GetWindowSize().x - (snrWidth + snrOffset), ImGui::GetCursorPosX());
 
-    ImGui::SetCursorPosX(snrPos);
-    ImGui::SetCursorPosY(origY + (5.0f * style::uiScale));
-    ImGui::SetNextItemWidth(snrWidth);
-    ImGui::SNRMeter((vfo != NULL) ? gui::waterfall.selectedVFOSNR : 0);
+        ImGui::SetCursorPosX(snrPos);
+        ImGui::SetCursorPosY(origY + (5.0f * style::uiScale));
+        ImGui::SetNextItemWidth(snrWidth);
+        ImGui::SNRMeter((vfo != NULL) ? gui::waterfall.selectedVFOSNR : 0);
 
-    // Note: this is what makes the vertical size correct, needs to be fixed
-    ImGui::SameLine();
+        // Note: this is what makes the vertical size correct, needs to be fixed
+        ImGui::SameLine();
 
-    // ImGui::EndChild();
+        // ImGui::EndChild();
 
-    // Logo button
-    ImGui::SetCursorPosX(ImGui::GetWindowSize().x - (48 * style::uiScale));
-    ImGui::SetCursorPosY(10.0f * style::uiScale);
-    if (ImGui::ImageButton(icons::LOGO, ImVec2(32 * style::uiScale, 32 * style::uiScale), ImVec2(0, 0), ImVec2(1, 1), 0)) {
-        showCredits = true;
+        // Logo button
+        ImGui::SetCursorPosX(ImGui::GetWindowSize().x - (48 * style::uiScale));
+        ImGui::SetCursorPosY(10.0f * style::uiScale);
+        if (ImGui::ImageButton(icons::LOGO, ImVec2(32 * style::uiScale, 32 * style::uiScale), ImVec2(0, 0), ImVec2(1, 1), 0)) {
+            showCredits = true;
+        }
     }
     if (ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
         showCredits = false;
@@ -437,9 +504,8 @@ void MainWindow::draw() {
     lockWaterfallControls = showCredits;
 
     // Handle menu resize
-    ImVec2 winSize = ImGui::GetWindowSize();
     ImVec2 mousePos = ImGui::GetMousePos();
-    if (!lockWaterfallControls && showMenu) {
+    if (!lockWaterfallControls && showMenu && !narrow) {
         float curY = ImGui::GetCursorPosY();
         bool click = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
         bool down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
@@ -448,7 +514,8 @@ void MainWindow::draw() {
             newWidth = std::clamp<float>(newWidth, 250, winSize.x - 250);
             ImGui::GetForegroundDrawList()->AddLine(ImVec2(newWidth, curY), ImVec2(newWidth, winSize.y - 10), ImGui::GetColorU32(ImGuiCol_SeparatorActive));
         }
-        if (mousePos.x >= newWidth - (2.0f * style::uiScale) && mousePos.x <= newWidth + (2.0f * style::uiScale) && mousePos.y > curY) {
+        float grabW = (touch::enabled ? 10.0f : 2.0f) * style::uiScale;
+        if (mousePos.x >= newWidth - grabW && mousePos.x <= newWidth + grabW && mousePos.y > curY) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
             if (click) {
                 grabbingMenu = true;
@@ -470,72 +537,32 @@ void MainWindow::draw() {
     displaymenu::checkKeybinds();
 
     // Left Column
-    if (showMenu) {
+    if (showMenu && narrow) {
+        // Portrait: menu on top (full width), waterfall below
+        float menuH = std::max<float>(ImGui::GetContentRegionAvail().y * 0.55f, 200.0f * style::uiScale);
+        ImGui::BeginChild("Left Column", ImVec2(0, menuH));
+        drawMenu();
+        ImGui::EndChild();
+    }
+    if (showMenu && !narrow) {
+        // The stored default (300 px) is far too narrow for finger-sized widgets
+        if (touch::enabled && menuWidth < 200.0f * style::uiScale && !grabbingMenu) {
+            menuWidth = newWidth = std::min<float>(200.0f * style::uiScale, winSize.x * 0.5f);
+        }
         ImGui::Columns(3, "WindowColumns", false);
         ImGui::SetColumnWidth(0, menuWidth);
-        ImGui::SetColumnWidth(1, std::max<int>(winSize.x - menuWidth - (60.0f * style::uiScale), 100.0f * style::uiScale));
-        ImGui::SetColumnWidth(2, 60.0f * style::uiScale);
+        ImGui::SetColumnWidth(1, std::max<int>(winSize.x - menuWidth - ctrlColW, 100.0f * style::uiScale));
+        ImGui::SetColumnWidth(2, ctrlColW);
         ImGui::BeginChild("Left Column");
-
-        if (gui::menu.draw(firstMenuRender)) {
-            core::configManager.acquire();
-            json arr = json::array();
-            for (int i = 0; i < gui::menu.order.size(); i++) {
-                arr[i]["name"] = gui::menu.order[i].name;
-                arr[i]["open"] = gui::menu.order[i].open;
-            }
-            core::configManager.conf["menuElements"] = arr;
-
-            // Update enabled and disabled modules
-            for (auto [_name, inst] : core::moduleManager.instances) {
-                if (!core::configManager.conf["moduleInstances"].contains(_name)) { continue; }
-                core::configManager.conf["moduleInstances"][_name]["enabled"] = inst.instance->isEnabled();
-            }
-
-            core::configManager.release(true);
-        }
-        if (startedWithMenuClosed) {
-            startedWithMenuClosed = false;
-        }
-        else {
-            firstMenuRender = false;
-        }
-
-        if (ImGui::CollapsingHeader("Debug")) {
-            ImGui::Text("Frame time: %.3f ms/frame", ImGui::GetIO().DeltaTime * 1000.0f);
-            ImGui::Text("Framerate: %.1f FPS", ImGui::GetIO().Framerate);
-            ImGui::Text("Center Frequency: %.0f Hz", gui::waterfall.getCenterFrequency());
-            ImGui::Text("Source name: %s", sourceName.c_str());
-            ImGui::Checkbox("Show demo window", &demoWindow);
-            ImGui::Text("ImGui version: %s", ImGui::GetVersion());
-
-            // ImGui::Checkbox("Bypass buffering", &sigpath::iqFrontEnd.inputBuffer.bypass);
-
-            // ImGui::Text("Buffering: %d", (sigpath::iqFrontEnd.inputBuffer.writeCur - sigpath::iqFrontEnd.inputBuffer.readCur + 32) % 32);
-
-            if (ImGui::Button("Test Bug")) {
-                flog::error("Will this make the software crash?");
-            }
-
-            if (ImGui::Button("Testing something")) {
-                gui::menu.order[0].open = true;
-                firstMenuRender = true;
-            }
-
-            ImGui::Checkbox("WF Single Click", &gui::waterfall.VFOMoveSingleClick);
-            ImGui::Checkbox("Lock Menu Order", &gui::menu.locked);
-
-            ImGui::Spacing();
-        }
-
+        drawMenu();
         ImGui::EndChild();
     }
     else {
         // When hiding the menu bar
         ImGui::Columns(3, "WindowColumns", false);
         ImGui::SetColumnWidth(0, 8 * style::uiScale);
-        ImGui::SetColumnWidth(1, winSize.x - ((8 + 60) * style::uiScale));
-        ImGui::SetColumnWidth(2, 60.0f * style::uiScale);
+        ImGui::SetColumnWidth(1, winSize.x - (8 * style::uiScale) - ctrlColW);
+        ImGui::SetColumnWidth(2, ctrlColW);
     }
 
     // Right Column
@@ -548,6 +575,8 @@ void MainWindow::draw() {
     gui::waterfall.draw();
 
     ImGui::EndChild();
+
+    handlePinchZoom(vfo);
 
     if (!lockWaterfallControls) {
         // Handle arrow keys
@@ -610,12 +639,13 @@ void MainWindow::draw() {
     }
 
     ImGui::NextColumn();
-    ImGui::BeginChild("WaterfallControls");
+    ImGui::BeginChild("WaterfallControls", ImVec2(0, 0), false, touch::enabled ? ImGuiWindowFlags_NoScrollbar : 0);
 
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Zoom").x / 2.0));
     ImGui::TextUnformatted("Zoom");
-    ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - 10 * style::uiScale);
-    ImVec2 wfSliderSize(20.0 * style::uiScale, 150.0 * style::uiScale);
+    float wfSliderW = (touch::enabled ? 36.0f : 20.0f) * style::uiScale;
+    ImGui::SetCursorPosX((ImGui::GetWindowSize().x - wfSliderW) / 2.0f);
+    ImVec2 wfSliderSize(wfSliderW, 150.0 * style::uiScale);
     if (ImGui::VSliderFloat("##_7_", wfSliderSize, &bw, 1.0, 0.0, "")) {
         double factor = (double)bw * (double)bw;
 
@@ -634,7 +664,7 @@ void MainWindow::draw() {
 
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Max").x / 2.0));
     ImGui::TextUnformatted("Max");
-    ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - 10 * style::uiScale);
+    ImGui::SetCursorPosX((ImGui::GetWindowSize().x - wfSliderW) / 2.0f);
     if (ImGui::VSliderFloat("##_8_", wfSliderSize, &fftMax, 0.0, -160.0f, "")) {
         fftMax = std::max<float>(fftMax, fftMin + 10);
         core::configManager.acquire();
@@ -646,7 +676,7 @@ void MainWindow::draw() {
 
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Min").x / 2.0));
     ImGui::TextUnformatted("Min");
-    ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - 10 * style::uiScale);
+    ImGui::SetCursorPosX((ImGui::GetWindowSize().x - wfSliderW) / 2.0f);
     ImGui::SetItemUsingMouseWheel();
     if (ImGui::VSliderFloat("##_9_", wfSliderSize, &fftMin, 0.0, -160.0f, "")) {
         fftMin = std::min<float>(fftMax - 10, fftMin);
@@ -704,4 +734,90 @@ bool MainWindow::isPlaying() {
 
 void MainWindow::setFirstMenuRender() {
     firstMenuRender = true;
+}
+void MainWindow::drawMenu() {
+
+    if (gui::menu.draw(firstMenuRender)) {
+        core::configManager.acquire();
+        json arr = json::array();
+        for (int i = 0; i < gui::menu.order.size(); i++) {
+            arr[i]["name"] = gui::menu.order[i].name;
+            arr[i]["open"] = gui::menu.order[i].open;
+        }
+        core::configManager.conf["menuElements"] = arr;
+
+        // Update enabled and disabled modules
+        for (auto [_name, inst] : core::moduleManager.instances) {
+            if (!core::configManager.conf["moduleInstances"].contains(_name)) { continue; }
+            core::configManager.conf["moduleInstances"][_name]["enabled"] = inst.instance->isEnabled();
+        }
+
+        core::configManager.release(true);
+    }
+    if (startedWithMenuClosed) {
+        startedWithMenuClosed = false;
+    }
+    else {
+        firstMenuRender = false;
+    }
+
+    if (ImGui::CollapsingHeader("Debug")) {
+        ImGui::Text("Frame time: %.3f ms/frame", ImGui::GetIO().DeltaTime * 1000.0f);
+        ImGui::Text("Framerate: %.1f FPS", ImGui::GetIO().Framerate);
+        ImGui::Text("Center Frequency: %.0f Hz", gui::waterfall.getCenterFrequency());
+        ImGui::Text("Source name: %s", sourceName.c_str());
+        ImGui::Checkbox("Show demo window", &demoWindow);
+        ImGui::Text("ImGui version: %s", ImGui::GetVersion());
+
+        // ImGui::Checkbox("Bypass buffering", &sigpath::iqFrontEnd.inputBuffer.bypass);
+
+        // ImGui::Text("Buffering: %d", (sigpath::iqFrontEnd.inputBuffer.writeCur - sigpath::iqFrontEnd.inputBuffer.readCur + 32) % 32);
+
+        if (ImGui::Button("Test Bug")) {
+            flog::error("Will this make the software crash?");
+        }
+
+        if (ImGui::Button("Testing something")) {
+            gui::menu.order[0].open = true;
+            firstMenuRender = true;
+        }
+
+        ImGui::Checkbox("WF Single Click", &gui::waterfall.VFOMoveSingleClick);
+        ImGui::Checkbox("Lock Menu Order", &gui::menu.locked);
+
+        ImGui::Spacing();
+    }
+}
+
+void MainWindow::handlePinchZoom(ImGui::WaterfallVFO* vfo) {
+    if (!touch::pinch.active) {
+        pinchValid = false;
+        return;
+    }
+
+    ImVec2 a = gui::waterfall.fftAreaMin;
+    ImVec2 b = gui::waterfall.wfMax;
+    float w = b.x - a.x;
+    if (w <= 0.0f) { return; }
+
+    if (touch::pinch.started) {
+        ImVec2 c = touch::pinch.center0;
+        pinchValid = (c.x >= a.x && c.x <= b.x && c.y >= a.y && c.y <= b.y);
+        pinchBw0 = gui::waterfall.getViewBandwidth();
+        // Frequency offset under the fingers stays put while zooming (and pans with them)
+        pinchAnchor = gui::waterfall.getViewOffset() + (((c.x - a.x) / w) - 0.5) * pinchBw0;
+    }
+    if (!pinchValid) { return; }
+
+    double wfBw = gui::waterfall.getBandwidth();
+    double minBw = std::min<double>(1000.0, wfBw);
+    double nbw = std::clamp<double>(pinchBw0 / touch::pinch.factor, minBw, wfBw);
+    double frac = ((touch::pinch.center.x - a.x) / w) - 0.5;
+    gui::waterfall.setViewBandwidth(nbw);
+    gui::waterfall.setViewOffset(pinchAnchor - frac * nbw);
+
+    // Keep the zoom slider in sync (inverse of the slider mapping)
+    if (wfBw > 1000.0) {
+        bw = sqrt(std::clamp<double>((nbw - 1000.0) / (wfBw - 1000.0), 0.0, 1.0));
+    }
 }

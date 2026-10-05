@@ -8,6 +8,7 @@
 #include <utils/event.h>
 #include <mutex>
 #include <gui/tuner.h>
+#include <gui/widgets/waterfall.h>
 
 #define WINDOW_FLAGS ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoBackground
 
@@ -35,6 +36,13 @@ public:
 
 private:
     static void vfoAddedHandler(VFOManager::VFO* vfo, void* ctx);
+    void drawMenu();
+    void handlePinchZoom(ImGui::WaterfallVFO* vfo);
+
+    // Touch pinch-zoom state
+    bool pinchValid = false;
+    double pinchBw0 = 0.0;
+    double pinchAnchor = 0.0;
 
     // FFT Variables
     int fftSize = 8192 * 8;
