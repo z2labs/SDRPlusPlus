@@ -58,6 +58,7 @@ cp $build_dir/source_modules/rtl_sdr_source/Release/rtl_sdr_source.dll sdrpp_win
 cp 'C:/Program Files/PothosSDR/bin/rtlsdr.dll' sdrpp_windows_x64/
 
 cp $build_dir/source_modules/rtl_tcp_source/Release/rtl_tcp_source.dll sdrpp_windows_x64/modules/
+cp $build_dir/source_modules/esp_sdr_source/Release/esp_sdr_source.dll sdrpp_windows_x64/modules/
 
 cp $build_dir/source_modules/sdrplay_source/Release/sdrplay_source.dll sdrpp_windows_x64/modules/ -ErrorAction SilentlyContinue
 cp 'C:/Program Files/SDRplay/API/x64/sdrplay_api.dll' sdrpp_windows_x64/ -ErrorAction SilentlyContinue
