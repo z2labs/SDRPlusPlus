@@ -44,4 +44,5 @@ jobs:
           if: startsWith(github.ref, 'refs/tags/esp-v')
           uses: softprops/action-gh-release@v2
           with:
+              body_path: .github/esp_release_notes.md
               files: ${{runner.workspace}}/sdrpp-esp.apk
