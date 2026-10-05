@@ -1,3 +1,4 @@
+#include <gui/touch.h>
 #include <gui/menus/theme.h>
 #include <gui/gui.h>
 #include <core.h>
@@ -27,6 +28,7 @@ namespace thememenu {
 
         // Apply scaling
         ImGui::GetStyle().ScaleAllSizes(style::uiScale);
+        if (touch::enabled) { touch::applyStyle(ImGui::GetStyle(), style::uiScale); }
 
         themeNamesTxt = "";
         for (auto name : themeNames) {

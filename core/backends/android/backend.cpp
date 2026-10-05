@@ -14,7 +14,11 @@
 #include <gui/icons.h>
 #include <gui/style.h>
 #include <gui/menus/theme.h>
+#include <gui/touch.h>
+#include <android/configuration.h>
 #include <filesystem>
+#include <algorithm>
+#include <cmath>
 
 // Credit to the ImGui android OpenGL3 example for a lot of this code!
 
@@ -40,6 +44,7 @@ namespace backend {
         icons::load(root + "/res");
         thememenu::applyTheme();
         ImGui::GetStyle().ScaleAllSizes(style::uiScale);
+        if (touch::enabled) { touch::applyStyle(ImGui::GetStyle(), style::uiScale); }
         gui::mainWindow.setFirstMenuRender();
     }
 
@@ -59,6 +64,7 @@ namespace backend {
         case APP_CMD_TERM_WINDOW:
             flog::warn("APP_CMD_TERM_WINDOW");
             pauseRendering = true;
+            touch::cancel();
             backend::end();
             break;
         case APP_CMD_GAINED_FOCUS:
@@ -70,8 +76,54 @@ namespace backend {
         }
     }
 
+    // Finger (and stylus) input goes through the touch gesture layer; mice keep the stock path
+    static bool handleTouchEvent(AInputEvent* ev) {
+        if (!touch::enabled || AInputEvent_getType(ev) != AINPUT_EVENT_TYPE_MOTION) { return false; }
+        int32_t tool = AMotionEvent_getToolType(ev, 0);
+        if (tool != AMOTION_EVENT_TOOL_TYPE_FINGER && tool != AMOTION_EVENT_TOOL_TYPE_STYLUS) { return false; }
+
+        int32_t action = AMotionEvent_getAction(ev);
+        int32_t idx = (action & AMOTION_EVENT_ACTION_POINTER_INDEX_MASK) >> AMOTION_EVENT_ACTION_POINTER_INDEX_SHIFT;
+        action &= AMOTION_EVENT_ACTION_MASK;
+        size_t count = AMotionEvent_getPointerCount(ev);
+        auto pt = [ev](size_t i) { return ImVec2(AMotionEvent_getX(ev, i), AMotionEvent_getY(ev, i)); };
+
+        switch (action) {
+        case AMOTION_EVENT_ACTION_DOWN:
+            touch::fingerDown(AMotionEvent_getX(ev, 0), AMotionEvent_getY(ev, 0));
+            break;
+        case AMOTION_EVENT_ACTION_POINTER_DOWN:
+            if (count == 2) { touch::pinchBegin(pt(0), pt(1)); }
+            break;
+        case AMOTION_EVENT_ACTION_MOVE:
+            if (count >= 2) { touch::pinchMove(pt(0), pt(1)); }
+            else { touch::fingerMove(AMotionEvent_getX(ev, 0), AMotionEvent_getY(ev, 0)); }
+            break;
+        case AMOTION_EVENT_ACTION_POINTER_UP:
+            if (count == 2) { touch::pinchEnd(); }
+            break;
+        case AMOTION_EVENT_ACTION_UP:
+            touch::fingerUp(AMotionEvent_getX(ev, idx), AMotionEvent_getY(ev, idx));
+            break;
+        case AMOTION_EVENT_ACTION_CANCEL:
+            touch::cancel();
+            break;
+        default:
+            break;
+        }
+        return true;
+    }
+
     int32_t handleInputEvent(struct android_app* app, AInputEvent* inputEvent) {
+        if (handleTouchEvent(inputEvent)) { return 1; }
         return ImGui_ImplAndroid_HandleInputEvent(inputEvent);
+    }
+
+    float getDisplayScale() {
+        // Android density buckets: 160 dpi = 1.0. The extra 10% gives finger-sized text.
+        int32_t density = (app && app->config) ? AConfiguration_getDensity(app->config) : 0;
+        if (density <= 0 || density == ACONFIGURATION_DENSITY_ANY || density == ACONFIGURATION_DENSITY_NONE) { return 3.0f; }
+        return std::clamp<float>(roundf(density / 160.0f * 1.1f * 4.0f) / 4.0f, 1.0f, 4.0f);
     }
 
     int aquireWindow() {
@@ -208,6 +260,9 @@ namespace backend {
                 if (io.WantTextInput && !WantTextInputLast)
                 ShowSoftKeyboardInput();
                 WantTextInputLast = io.WantTextInput;
+
+                // Touch gestures (scroll/fling, delayed presses)
+                touch::update();
 
                 // Render
                 beginFrame();

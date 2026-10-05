@@ -1,3 +1,7 @@
+#include <gui/touch.h>
+#ifdef __ANDROID__
+#include <android_backend.h>
+#endif
 #include <server.h>
 #include "imgui.h"
 #include <stdio.h>
@@ -231,9 +235,11 @@ int sdrpp_main(int argc, char* argv[]) {
     // Themes
     defConfig["theme"] = "Dark";
 #ifdef __ANDROID__
-    defConfig["uiScale"] = 3.0f;
+    defConfig["uiScale"] = 0.0f; // 0 = automatic, from the display density
+    defConfig["touchMode"] = true;
 #else
     defConfig["uiScale"] = 1.0f;
+    defConfig["touchMode"] = false;
 #endif
 
     defConfig["modules"] = json::array();
@@ -323,6 +329,13 @@ int sdrpp_main(int argc, char* argv[]) {
     core::configManager.conf["modules"][modCount++] = "scanner.so";
 #endif
 
+#ifdef __ANDROID__
+    // First start of a touch-mode build: the old fixed 300% default becomes automatic scaling
+    if (!core::configManager.conf.contains("touchMode") && core::configManager.conf.contains("uiScale") && (float)core::configManager.conf["uiScale"] == 3.0f) {
+        core::configManager.conf["uiScale"] = 0.0f;
+    }
+#endif
+
     // Fix missing elements in config
     for (auto const& item : defConfig.items()) {
         if (!core::configManager.conf.contains(item.key())) {
@@ -363,6 +376,10 @@ int sdrpp_main(int argc, char* argv[]) {
 
     // Load UI scaling
     style::uiScale = core::configManager.conf["uiScale"];
+#ifdef __ANDROID__
+    if (style::uiScale <= 0.0f) { style::uiScale = backend::getDisplayScale(); }
+#endif
+    touch::enabled = core::configManager.conf["touchMode"];
 
     core::configManager.release(true);
 
