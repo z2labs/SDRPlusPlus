@@ -302,6 +302,45 @@ void SinkManager::showVolumeSlider(std::string name, std::string prefix, float w
     //ImGui::SetCursorPosY(ypos);
 }
 
+void SinkManager::showMuteButton(std::string name, ImVec2 imageSize, int framePadding) {
+    ImVec4 tint = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+    if (streams.find(name) == streams.end() || name == "") {
+        style::beginDisabled();
+        ImGui::PushID("sdrpp_touch_mute_dis");
+        ImGui::ImageButton(icons::MUTED, imageSize, ImVec2(0, 0), ImVec2(1, 1), framePadding, ImVec4(0, 0, 0, 0), tint);
+        ImGui::PopID();
+        style::endDisabled();
+        return;
+    }
+    SinkManager::Stream* stream = streams[name];
+    bool muted = stream->volumeAjust.getMuted();
+    ImGui::PushID(("sdrpp_touch_mute_" + name).c_str());
+    if (ImGui::ImageButton(muted ? icons::MUTED : icons::UNMUTED, imageSize, ImVec2(0, 0), ImVec2(1, 1), framePadding, ImVec4(0, 0, 0, 0), tint)) {
+        stream->volumeAjust.setMuted(!muted);
+        core::configManager.acquire();
+        saveStreamConfig(name);
+        core::configManager.release(true);
+    }
+    ImGui::PopID();
+}
+
+void SinkManager::showVolumeSliderV(std::string name, std::string id, ImVec2 size) {
+    if (streams.find(name) == streams.end() || name == "") {
+        float dummy = 0.0f;
+        style::beginDisabled();
+        ImGui::VSliderFloat(id.c_str(), size, &dummy, 0.0f, 1.0f, "");
+        style::endDisabled();
+        return;
+    }
+    SinkManager::Stream* stream = streams[name];
+    if (ImGui::VSliderFloat(id.c_str(), size, &stream->guiVolume, 0.0f, 1.0f, "")) {
+        stream->setVolume(stream->guiVolume);
+        core::configManager.acquire();
+        saveStreamConfig(name);
+        core::configManager.release(true);
+    }
+}
+
 void SinkManager::loadStreamConfig(std::string name) {
     json conf = core::configManager.conf["streams"][name];
     SinkManager::Stream* stream = streams[name];

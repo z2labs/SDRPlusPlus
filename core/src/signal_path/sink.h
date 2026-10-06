@@ -1,4 +1,5 @@
 #pragma once
+#include <imgui/imgui.h>
 #include <map>
 #include <string>
 #include <dsp/stream.h>
@@ -102,6 +103,10 @@ public:
     void setStreamSink(std::string name, std::string providerName);
 
     void showVolumeSlider(std::string name, std::string prefix, float width, float btnHeight = -1.0f, int btnBorder = 0, bool sameLine = false);
+
+    // Touch UI pieces: mute toggle button and a vertical volume slider
+    void showMuteButton(std::string name, ImVec2 imageSize, int framePadding);
+    void showVolumeSliderV(std::string name, std::string id, ImVec2 size);
 
     dsp::stream<dsp::stereo_t>* bindStream(std::string name);
     void unbindStream(std::string name, dsp::stream<dsp::stereo_t>* stream);

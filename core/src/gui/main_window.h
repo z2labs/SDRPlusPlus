@@ -1,5 +1,9 @@
 #pragma once
 #include <imgui/imgui.h>
+#ifndef IMGUI_DEFINE_MATH_OPERATORS
+#define IMGUI_DEFINE_MATH_OPERATORS
+#endif
+#include <imgui/imgui_internal.h>
 #include <fftw3.h>
 #include <dsp/types.h>
 #include <dsp/stream.h>
@@ -38,6 +42,24 @@ public:
 private:
     static void vfoAddedHandler(VFOManager::VFO* vfo, void* ctx);
     void drawMenu();
+
+    // Touch layout (gui/touch_layout.cpp)
+    void drawTouchLayout(ImGui::WaterfallVFO* vfo);
+    void drawTouchTuningButton(ImVec2 imageSize, int framePadding);
+    void applyZoomSlider(ImGui::WaterfallVFO* vfo);
+    bool railOpen = false;
+    bool drawerOpen = false;
+    bool drawerWasOpen = false;
+    bool swallowTouch = false;
+    float railT = 0.0f;
+    float drawerT = 0.0f;
+    float freqT = 0.0f;
+    double railLastTouch = 0.0;
+    double freqLastTouch = -10.0;
+    ImRect railRect;
+    ImRect handleRect;
+    ImRect freqRect;
+    std::vector<std::pair<double, float>> autoPeakHist;
     void setAutoRange(bool enabled);
     void updateAutoRange();
 
