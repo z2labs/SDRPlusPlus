@@ -12,13 +12,20 @@
             android:name="org.sdrpp.sdrpp.MainActivity"
             android:icon="@mipmap/ic_launcher"
             android:theme="@android:style/Theme.NoTitleBar.Fullscreen"
-            android:configChanges="orientation|keyboardHidden|screenSize">
+            android:launchMode="singleTask"
+            android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize|uiMode|density">
             <meta-data android:name="android.app.lib_name" android:value="sdrpp_core" />
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- Offer SDR++ when a supported SDR is plugged in (grants USB permission on accept) -->
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" android:resource="@xml/device_filter" />
         </activity>
     </application>
 

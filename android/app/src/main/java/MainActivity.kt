@@ -27,27 +27,33 @@ import java.io.*;
 
 private const val ACTION_USB_PERMISSION = "org.sdrpp.sdrpp.USB_PERMISSION";
 
+// USB permission results. Stays registered: the old one unregistered itself after the
+// first answer, so a second device (or a re-plugged one) could never be opened.
 private val usbReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (ACTION_USB_PERMISSION == intent.action) {
             synchronized(this) {
                 var _this = context as MainActivity;
-                _this.SDR_device = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-                    _this.SDR_conn = _this.usbManager!!.openDevice(_this.SDR_device);
-                    
-                    // Save SDR info
-                    _this.SDR_VID = _this.SDR_device!!.getVendorId();
-                    _this.SDR_PID = _this.SDR_device!!.getProductId()
-                    _this.SDR_FD = _this.SDR_conn!!.getFileDescriptor();
+                val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                if (dev != null && intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                    _this.openSdr(dev);
                 }
-                
-                // Whatever the hell this does
-                context.unregisterReceiver(this);
 
                 // Hide again the system bars
                 _this.hideSystemBars();
             }
+        }
+    }
+}
+
+// SDR plugged in while the app is running: ask for permission right away, so a
+// Refresh in the source menu finds it without restarting the app.
+private val usbAttachReceiver = object : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        if (UsbManager.ACTION_USB_DEVICE_ATTACHED == intent.action) {
+            var _this = context as MainActivity;
+            val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            if (dev != null) { _this.requestSdrPermission(dev); }
         }
     }
 }
@@ -65,6 +71,37 @@ class MainActivity : NativeActivity() {
         if (PermissionChecker.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(permission), 1);
         }
+    }
+
+    public var permissionIntent : PendingIntent? = null;
+
+    public fun openSdr(dev: UsbDevice) {
+        val conn = usbManager!!.openDevice(dev) ?: return;
+        SDR_device = dev;
+        SDR_conn = conn;
+        SDR_VID = dev.getVendorId();
+        SDR_PID = dev.getProductId();
+        SDR_FD = conn.getFileDescriptor();
+    }
+
+    public fun requestSdrPermission(dev: UsbDevice) {
+        if (usbManager!!.hasPermission(dev)) {
+            openSdr(dev);
+        }
+        else {
+            usbManager!!.requestPermission(dev, permissionIntent);
+        }
+    }
+
+    // Launched (or brought back, launchMode=singleTask) by plugging in a supported SDR:
+    // the system has already granted permission for that device.
+    public override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent);
+        if (UsbManager.ACTION_USB_DEVICE_ATTACHED == intent.action) {
+            val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            if (dev != null) { requestSdrPermission(dev); }
+        }
+        hideSystemBars();
     }
 
     public fun hideSystemBars() {
@@ -85,20 +122,26 @@ class MainActivity : NativeActivity() {
 
         // Register events
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager;
-        val permissionIntent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), 0)
-        val filter = IntentFilter(ACTION_USB_PERMISSION)
-        registerReceiver(usbReceiver, filter)
+        permissionIntent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), 0)
+        registerReceiver(usbReceiver, IntentFilter(ACTION_USB_PERMISSION))
+        registerReceiver(usbAttachReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED))
 
-        // Get permission for all USB devices
+        // Get permission for all USB devices already plugged in
         val devList = usbManager!!.getDeviceList();
         for ((name, dev) in devList) {
-            usbManager!!.requestPermission(dev, permissionIntent);
+            requestSdrPermission(dev);
         }
 
         // Ask for internet permission
         checkAndAsk(Manifest.permission.INTERNET);
 
         super.onCreate(savedInstanceState)
+    }
+
+    public override fun onDestroy() {
+        try { unregisterReceiver(usbReceiver); } catch (e: Exception) {}
+        try { unregisterReceiver(usbAttachReceiver); } catch (e: Exception) {}
+        super.onDestroy();
     }
 
     public override fun onResume() {

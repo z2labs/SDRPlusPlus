@@ -331,6 +331,13 @@ void MainWindow::draw() {
         core::configManager.release(true);
     }
 
+    // Touch devices: full-screen waterfall with floating controls (gui/touch_layout.cpp)
+    if (touch::enabled) {
+        drawTouchLayout(vfo);
+        if (demoWindow) { ImGui::ShowDemoWindow(); }
+        return;
+    }
+
     // To Bar
     // ImGui::BeginChild("TopBarChild", ImVec2(0, 49.0f * style::uiScale), false, ImGuiWindowFlags_HorizontalScrollbar);
     ImVec2 winSize = ImGui::GetWindowSize();
@@ -881,6 +888,11 @@ void MainWindow::updateAutoRange() {
     std::nth_element(autoRangeBuf.begin(), autoRangeBuf.begin() + k, autoRangeBuf.end());
     float floor = autoRangeBuf[k];
 
+    // Peak hold over the last 3 s: bursty / pulsed signals keep the top steady
+    autoPeakHist.push_back({ now, peak });
+    while (!autoPeakHist.empty() && now - autoPeakHist.front().first > 3.0) { autoPeakHist.erase(autoPeakHist.begin()); }
+    for (auto const& ph : autoPeakHist) { peak = std::max<float>(peak, ph.second); }
+
     float tMin = floor - 6.0f;
     float tMax = std::max<float>(peak + 6.0f, floor + 35.0f);
     float tWfMin = floor - 2.0f; // noise sits just above black in the waterfall
@@ -894,7 +906,8 @@ void MainWindow::updateAutoRange() {
     }
 
     // Widen quickly (new strong signal), narrow slowly (avoid pumping)
-    auto track = [](float& cur, float target, bool fast) { cur += (target - cur) * (fast ? 0.35f : 0.05f); };
+    // ~0.3 s to widen, ~5 s to narrow back (updates run at 10 Hz)
+    auto track = [](float& cur, float target, bool fast) { cur += (target - cur) * (fast ? 0.35f : 0.02f); };
     track(fftMin, tMin, tMin < fftMin);
     track(fftMax, tMax, tMax > fftMax);
     track(wfAutoMin, tWfMin, tWfMin < wfAutoMin);

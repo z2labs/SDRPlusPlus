@@ -111,7 +111,7 @@ void FrequencySelect::draw() {
     
     int digitWidth = digitSz.x;
     int commaOffset = 0;
-    float textOffset = 11.0f * style::uiScale;
+    float textOffset = 11.0f * style::uiScale * window->FontWindowScale; // follows SetWindowFontScale (touch layout)
     bool zeros = true;
 
     ImGui::ItemSize(ImRect(digitTopMins[0], ImVec2(digitBottomMaxs[11].x + 15, digitBottomMaxs[11].y)));
