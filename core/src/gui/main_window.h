@@ -5,6 +5,7 @@
 #include <dsp/stream.h>
 #include <signal_path/vfo_manager.h>
 #include <string>
+#include <vector>
 #include <utils/event.h>
 #include <mutex>
 #include <gui/tuner.h>
@@ -37,6 +38,15 @@ public:
 private:
     static void vfoAddedHandler(VFOManager::VFO* vfo, void* ctx);
     void drawMenu();
+    void setAutoRange(bool enabled);
+    void updateAutoRange();
+
+    // Automatic FFT / waterfall range
+    bool autoRange = false;
+    bool autoRangeInit = false;
+    float wfAutoMin = -120.0f;
+    double lastAutoRange = 0.0;
+    std::vector<float> autoRangeBuf;
     void handlePinchZoom(ImGui::WaterfallVFO* vfo);
 
     // Touch pinch-zoom state

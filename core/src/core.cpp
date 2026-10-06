@@ -237,9 +237,11 @@ int sdrpp_main(int argc, char* argv[]) {
 #ifdef __ANDROID__
     defConfig["uiScale"] = 0.0f; // 0 = automatic, from the display density
     defConfig["touchMode"] = true;
+    defConfig["autoRange"] = true;
 #else
     defConfig["uiScale"] = 1.0f;
     defConfig["touchMode"] = false;
+    defConfig["autoRange"] = false;
 #endif
 
     defConfig["modules"] = json::array();

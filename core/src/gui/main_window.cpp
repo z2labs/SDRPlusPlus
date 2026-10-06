@@ -179,6 +179,7 @@ void MainWindow::init() {
     core::configManager.acquire();
     fftMin = core::configManager.conf["min"];
     fftMax = core::configManager.conf["max"];
+    autoRange = core::configManager.conf["autoRange"];
     gui::waterfall.setFFTMin(fftMin);
     gui::waterfall.setWaterfallMin(fftMin);
     gui::waterfall.setFFTMax(fftMax);
@@ -639,13 +640,29 @@ void MainWindow::draw() {
     }
 
     ImGui::NextColumn();
-    ImGui::BeginChild("WaterfallControls", ImVec2(0, 0), false, touch::enabled ? ImGuiWindowFlags_NoScrollbar : 0);
+    // Vertical sliders live here: in touch mode this column must never scroll, or a slider drag becomes a scroll
+    ImGui::BeginChild("WaterfallControls", ImVec2(0, 0), false, touch::enabled ? (ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse) : 0);
+
+    // Automatic FFT / waterfall range (on by default in touch mode)
+    if (touch::enabled) {
+        bool wasAuto = autoRange;
+        if (wasAuto) { ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab)); }
+        if (ImGui::Button("Auto##_sdrpp_auto_range", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
+            setAutoRange(!autoRange);
+        }
+        if (wasAuto) { ImGui::PopStyleColor(); }
+    }
 
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x / 2.0) - (ImGui::CalcTextSize("Zoom").x / 2.0));
     ImGui::TextUnformatted("Zoom");
     float wfSliderW = (touch::enabled ? 36.0f : 20.0f) * style::uiScale;
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x - wfSliderW) / 2.0f);
-    ImVec2 wfSliderSize(wfSliderW, 150.0 * style::uiScale);
+    // Fit the three sliders (and the Auto button) into the column height (landscape phones)
+    float colLabelH = ImGui::GetTextLineHeightWithSpacing();
+    float autoBtnH = touch::enabled ? (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y) : 0.0f;
+    float fixedH = autoBtnH + 3.0f * (colLabelH + ImGui::GetTextLineHeight() + ImGui::GetStyle().ItemSpacing.y * 2.0f);
+    float sliderH = std::clamp<float>((ImGui::GetContentRegionAvail().y - fixedH) / 3.0f, 40.0f * style::uiScale, 150.0f * style::uiScale);
+    ImVec2 wfSliderSize(wfSliderW, sliderH);
     if (ImGui::VSliderFloat("##_7_", wfSliderSize, &bw, 1.0, 0.0, "")) {
         double factor = (double)bw * (double)bw;
 
@@ -666,6 +683,7 @@ void MainWindow::draw() {
     ImGui::TextUnformatted("Max");
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x - wfSliderW) / 2.0f);
     if (ImGui::VSliderFloat("##_8_", wfSliderSize, &fftMax, 0.0, -160.0f, "")) {
+        if (autoRange) { setAutoRange(false); } // manual adjustment takes over
         fftMax = std::max<float>(fftMax, fftMin + 10);
         core::configManager.acquire();
         core::configManager.conf["max"] = fftMax;
@@ -679,6 +697,7 @@ void MainWindow::draw() {
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x - wfSliderW) / 2.0f);
     ImGui::SetItemUsingMouseWheel();
     if (ImGui::VSliderFloat("##_9_", wfSliderSize, &fftMin, 0.0, -160.0f, "")) {
+        if (autoRange) { setAutoRange(false); }
         fftMin = std::min<float>(fftMax - 10, fftMin);
         core::configManager.acquire();
         core::configManager.conf["min"] = fftMin;
@@ -687,9 +706,11 @@ void MainWindow::draw() {
 
     ImGui::EndChild();
 
+    if (autoRange) { updateAutoRange(); }
+
     gui::waterfall.setFFTMin(fftMin);
     gui::waterfall.setFFTMax(fftMax);
-    gui::waterfall.setWaterfallMin(fftMin);
+    gui::waterfall.setWaterfallMin(autoRange ? wfAutoMin : fftMin);
     gui::waterfall.setWaterfallMax(fftMax);
 
     ImGui::End();
@@ -820,4 +841,63 @@ void MainWindow::handlePinchZoom(ImGui::WaterfallVFO* vfo) {
     if (wfBw > 1000.0) {
         bw = sqrt(std::clamp<double>((nbw - 1000.0) / (wfBw - 1000.0), 0.0, 1.0));
     }
+}
+
+void MainWindow::setAutoRange(bool enabled) {
+    autoRange = enabled;
+    autoRangeInit = false;
+    core::configManager.acquire();
+    core::configManager.conf["autoRange"] = autoRange;
+    if (!autoRange) {
+        // Keep the last automatic levels as the manual starting point
+        core::configManager.conf["min"] = fftMin;
+        core::configManager.conf["max"] = fftMax;
+    }
+    core::configManager.release(true);
+}
+
+void MainWindow::updateAutoRange() {
+    // ~10 updates per second is plenty and keeps the cost negligible
+    double now = ImGui::GetTime();
+    if (now - lastAutoRange < 0.1) { return; }
+    lastAutoRange = now;
+
+    int width = 0;
+    float* fft = gui::waterfall.acquireLatestFFT(width);
+    if (!fft) { return; }
+    autoRangeBuf.clear();
+    float peak = -INFINITY;
+    for (int i = 0; i < width; i++) {
+        float v = fft[i];
+        if (!std::isfinite(v) || v <= -500.0f) { continue; } // hidden / invalid bins
+        autoRangeBuf.push_back(v);
+        peak = std::max<float>(peak, v);
+    }
+    gui::waterfall.releaseLatestFFT();
+    if (autoRangeBuf.size() < 16) { return; }
+
+    // Noise floor = 25th percentile of the visible bins (robust against carriers)
+    size_t k = autoRangeBuf.size() / 4;
+    std::nth_element(autoRangeBuf.begin(), autoRangeBuf.begin() + k, autoRangeBuf.end());
+    float floor = autoRangeBuf[k];
+
+    float tMin = floor - 6.0f;
+    float tMax = std::max<float>(peak + 6.0f, floor + 35.0f);
+    float tWfMin = floor - 2.0f; // noise sits just above black in the waterfall
+
+    if (!autoRangeInit) {
+        fftMin = tMin;
+        fftMax = tMax;
+        wfAutoMin = tWfMin;
+        autoRangeInit = true;
+        return;
+    }
+
+    // Widen quickly (new strong signal), narrow slowly (avoid pumping)
+    auto track = [](float& cur, float target, bool fast) { cur += (target - cur) * (fast ? 0.35f : 0.05f); };
+    track(fftMin, tMin, tMin < fftMin);
+    track(fftMax, tMax, tMax > fftMax);
+    track(wfAutoMin, tWfMin, tWfMin < wfAutoMin);
+    fftMin = std::clamp<float>(fftMin, -160.0f, 0.0f);
+    fftMax = std::clamp<float>(fftMax, fftMin + 10.0f, 20.0f);
 }
