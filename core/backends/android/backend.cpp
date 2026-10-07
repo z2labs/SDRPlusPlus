@@ -17,6 +17,7 @@
 #include <gui/touch.h>
 #include "crashlog.h"
 #include <android/configuration.h>
+#include <android/window.h>
 #include <filesystem>
 #include <algorithm>
 #include <cmath>
