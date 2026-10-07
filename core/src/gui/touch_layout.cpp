@@ -357,8 +357,25 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
             }
             ImGui::PopID();
             ImGui::SameLine();
-            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (btn - ImGui::GetTextLineHeight()) / 2.0f);
+            float rowY = ImGui::GetCursorPosY();
+            ImGui::SetCursorPosY(rowY + (btn - ImGui::GetTextLineHeight()) / 2.0f);
             ImGui::TextUnformatted("SDR++");
+
+            // Play / stop here too: the source settings (device, sample rate, mode) can only be
+            // changed while stopped, so stopping must not mean closing the drawer
+            ImGui::SameLine();
+            ImGui::SetCursorPos(ImVec2(ImGui::GetWindowContentRegionMax().x - btn, rowY));
+            bool tmpPlaying = playing;
+            if (playButtonLocked && !tmpPlaying) { style::beginDisabled(); }
+            ImGui::PushID("sdrpp_touch_drawer_play");
+            if (ImGui::ImageButton(playing ? icons::STOP : icons::PLAY, img, ImVec2(0, 0), ImVec2(1, 1), fp, ImVec4(0, 0, 0, 0), textCol)) {
+                setPlayState(!playing);
+            }
+            ImGui::PopID();
+            if (playButtonLocked && !tmpPlaying) { style::endDisabled(); }
+            if (playing) {
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Stop to change the greyed-out source settings");
+            }
 
             ImGui::BeginChild("##sdrpp_touch_drawer_scroll");
             drawMenu();

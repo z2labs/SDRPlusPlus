@@ -400,9 +400,13 @@ private:
             }
         }
 
+        if (_this->running) { SmGui::EndDisabled(); } // the sample rate can change while running (restart)
         if (SmGui::Combo(CONCAT("##_rtlsdr_sr_sel_", _this->name), &_this->srId, _this->sampleRateListTxt.c_str())) {
+            bool wasRunning = _this->running;
+            if (wasRunning) { stop(_this); }
             _this->sampleRate = sampleRates[_this->srId];
             core::setInputSampleRate(_this->sampleRate);
+            if (wasRunning) { start(_this); }
             if (_this->selectedDevName != "") {
                 config.acquire();
                 config.conf["devices"][_this->selectedDevName]["sampleRate"] = _this->sampleRate;
@@ -410,6 +414,7 @@ private:
             }
         }
 
+        if (_this->running) { SmGui::BeginDisabled(); }
         SmGui::SameLine();
         SmGui::FillWidth();
         SmGui::ForceSync();

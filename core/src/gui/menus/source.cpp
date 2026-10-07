@@ -296,18 +296,17 @@ namespace sourcemenu {
         float spacing = lineHeight - ImGui::GetTextLineHeight();
         bool running = gui::mainWindow.sdrIsRunning();
 
-        if (running) { style::beginDisabled(); }
-
+        // Changing the source while running: stop, switch, start the new one
         ImGui::SetNextItemWidth(itemWidth);
         if (ImGui::Combo("##source", &sourceId, sources.txt)) {
             std::string newSource = sources.value(sourceId);
+            if (running) { gui::mainWindow.setPlayState(false); }
             selectSource(newSource);
             core::configManager.acquire();
             core::configManager.conf["source"] = newSource;
             core::configManager.release(true);
+            if (running) { gui::mainWindow.setPlayState(true); }
         }
-
-        if (running) { style::endDisabled(); }
 
         sigpath::sourceManager.showSelectedMenu();
 
@@ -374,15 +373,15 @@ namespace sourcemenu {
             style::endDisabled();
         }
 
-        if (running) { style::beginDisabled(); }
         ImGui::LeftLabel("Decimation");
         ImGui::FillWidth();
         if (ImGui::Combo("##source_decim", &decimId, decimations.txt)) {
+            if (running) { gui::mainWindow.setPlayState(false); }
             sigpath::iqFrontEnd.setDecimation(decimations.value(decimId));
             core::configManager.acquire();
             core::configManager.conf["decimation"] = decimations.key(decimId);
             core::configManager.release(true);
+            if (running) { gui::mainWindow.setPlayState(true); }
         }
-        if (running) { style::endDisabled(); }
     }
 }

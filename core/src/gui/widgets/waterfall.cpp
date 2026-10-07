@@ -263,8 +263,9 @@ namespace ImGui {
 
         // Spectrum / waterfall divider: a finger needs a much taller grab zone than a mouse
         // (more of it on the waterfall side, so the frequency axis above stays draggable for tuning)
-        float grabUp = (touch::enabled ? 8.0f : 2.0f) * style::uiScale;
-        float grabDown = (touch::enabled ? 18.0f : 2.0f) * style::uiScale;
+        // (about 7 mm in total on a phone: 14 above the line, 30 below)
+        float grabUp = (touch::enabled ? 14.0f : 2.0f) * style::uiScale;
+        float grabDown = (touch::enabled ? 30.0f : 2.0f) * style::uiScale;
         mouseInFFTResize = (dragOrigin.x > widgetPos.x && dragOrigin.x < widgetPos.x + widgetSize.x && dragOrigin.y >= widgetPos.y + newFFTAreaHeight - grabUp && dragOrigin.y <= widgetPos.y + newFFTAreaHeight + grabDown);
         mouseInFreq = IS_IN_AREA(dragOrigin, freqAreaMin, freqAreaMax);
         mouseInFFT = IS_IN_AREA(dragOrigin, fftAreaMin, fftAreaMax);
@@ -874,20 +875,21 @@ namespace ImGui {
         updateAllVFOs(true);
 
         drawFFT();
-        if (touch::enabled && waterfallVisible) {
-            // Grip on the spectrum / waterfall divider (drag it, or tap to step through presets)
-            float gy = widgetPos.y + newFFTAreaHeight;
-            float gw = 56.0f * style::uiScale, gh = 6.0f * style::uiScale;
-            float gx = widgetPos.x + (widgetSize.x - gw) / 2.0f;
-            ImU32 gc = fftResizeSelect ? ImGui::GetColorU32(ImGuiCol_SliderGrabActive) : ImGui::GetColorU32(ImGuiCol_Text, 0.45f);
-            window->DrawList->AddRectFilled(ImVec2(gx, gy - gh / 2.0f), ImVec2(gx + gw, gy + gh / 2.0f), gc, gh / 2.0f);
-        }
         if (waterfallVisible) {
             drawWaterfall();
         }
         drawVFOs();
         if (bandplan != NULL && bandplanVisible) {
             drawBandPlan();
+        }
+        if (touch::enabled && waterfallVisible) {
+            // Grip on the spectrum / waterfall divider (drag it, or tap to step through presets),
+            // drawn after the waterfall so the image does not cover its lower half
+            float gy = widgetPos.y + newFFTAreaHeight;
+            float gw = 72.0f * style::uiScale, gh = 8.0f * style::uiScale;
+            float gx = widgetPos.x + (widgetSize.x - gw) / 2.0f;
+            ImU32 gc = fftResizeSelect ? ImGui::GetColorU32(ImGuiCol_SliderGrabActive) : ImGui::GetColorU32(ImGuiCol_Text, 0.45f);
+            window->DrawList->AddRectFilled(ImVec2(gx, gy - gh / 2.0f), ImVec2(gx + gw, gy + gh / 2.0f), gc, gh / 2.0f);
         }
 
         if (!waterfallVisible) {
