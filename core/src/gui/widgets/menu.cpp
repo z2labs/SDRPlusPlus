@@ -1,3 +1,4 @@
+#include <gui/touch.h>
 #include <gui/widgets/menu.h>
 #include <imgui/imgui.h>
 #include <imgui/imgui_internal.h>
@@ -108,7 +109,9 @@ bool Menu::draw(bool updateStates) {
                 ImGui::SetCursorPosX(pos.x + checkboxOffset.x);
                 ImGui::SetCursorPosY(pos.y + checkboxOffset.y);
                 bool enabled = item.inst->isEnabled();
-                if (ImGui::Checkbox(("##_menu_checkbox_" + opt.name).c_str(), &enabled)) {
+                // Touch: no module on/off box while the module is on. On a phone it only gets hit by
+                // accident (scrolling past a header switched the Radio off: no audio, no VFO)
+                if (!(touch::enabled && enabled) && ImGui::Checkbox(("##_menu_checkbox_" + opt.name).c_str(), &enabled)) {
                     enabled ? item.inst->enable() : item.inst->disable();
                     changed = true;
                 }
@@ -130,7 +133,7 @@ bool Menu::draw(bool updateStates) {
             ImGui::SetCursorPosX(pos.x + checkboxOffset.x);
             ImGui::SetCursorPosY(pos.y + checkboxOffset.y);
             bool enabled = item.inst->isEnabled();
-            if (ImGui::Checkbox(("##_menu_checkbox_" + opt.name).c_str(), &enabled)) {
+            if (!(touch::enabled && enabled) && ImGui::Checkbox(("##_menu_checkbox_" + opt.name).c_str(), &enabled)) {
                 enabled ? item.inst->enable() : item.inst->disable();
                 changed = true;
             }

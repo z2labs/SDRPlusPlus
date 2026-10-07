@@ -366,18 +366,20 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
             // changed while stopped, so stopping must not mean closing the drawer
             ImGui::SameLine();
             ImGui::SetCursorPos(ImVec2(ImGui::GetWindowContentRegionMax().x - btn, rowY));
+            // Accent coloured, so it never reads as a greyed-out control
             bool tmpPlaying = playing;
             if (playButtonLocked && !tmpPlaying) { style::beginDisabled(); }
+            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.23f, 0.51f, 0.89f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.30f, 0.58f, 0.95f, 1.0f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.18f, 0.42f, 0.78f, 1.0f));
             ImGui::PushID("sdrpp_touch_drawer_play");
-            if (ImGui::ImageButton(playing ? icons::STOP : icons::PLAY, img, ImVec2(0, 0), ImVec2(1, 1), fp, ImVec4(0, 0, 0, 0), textCol)) {
+            if (ImGui::ImageButton(playing ? icons::STOP : icons::PLAY, img, ImVec2(0, 0), ImVec2(1, 1), fp, ImVec4(0, 0, 0, 0), ImVec4(1, 1, 1, 1))) {
                 setPlayState(!playing);
             }
             ImGui::PopID();
+            ImGui::PopStyleColor(3);
             if (playButtonLocked && !tmpPlaying) { style::endDisabled(); }
             ImGui::TextDisabled("SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", " __DATE__ ")");
-            if (playing) {
-                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Stop to change the greyed-out source settings");
-            }
 
             ImGui::BeginChild("##sdrpp_touch_drawer_scroll");
             drawMenu();

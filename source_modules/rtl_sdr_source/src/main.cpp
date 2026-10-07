@@ -387,10 +387,12 @@ private:
     static void menuHandler(void* ctx) {
         RTLSDRSourceModule* _this = (RTLSDRSourceModule*)ctx;
 
-        if (_this->running) { SmGui::BeginDisabled(); }
+        // Nothing here greys out while running: changes that need it restart the stream
         SmGui::FillWidth();
         SmGui::ForceSync();
         if (SmGui::Combo(CONCAT("##_rtlsdr_dev_sel_", _this->name), &_this->devId, _this->devListTxt.c_str())) {
+            bool wasRunning = _this->running;
+            if (wasRunning) { stop(_this); }
             _this->selectById(_this->devId);
             core::setInputSampleRate(_this->sampleRate);
             if (_this->selectedDevName != "") {
@@ -398,9 +400,9 @@ private:
                 config.conf["device"] = _this->selectedDevName;
                 config.release(true);
             }
+            if (wasRunning) { start(_this); }
         }
 
-        if (_this->running) { SmGui::EndDisabled(); } // the sample rate can change while running (restart)
         if (SmGui::Combo(CONCAT("##_rtlsdr_sr_sel_", _this->name), &_this->srId, _this->sampleRateListTxt.c_str())) {
             bool wasRunning = _this->running;
             if (wasRunning) { stop(_this); }
@@ -414,17 +416,17 @@ private:
             }
         }
 
-        if (_this->running) { SmGui::BeginDisabled(); }
         SmGui::SameLine();
         SmGui::FillWidth();
         SmGui::ForceSync();
         if (SmGui::Button(CONCAT("Refresh##_rtlsdr_refr_", _this->name)/*, ImVec2(refreshBtnWdith, 0)*/)) {
+            bool wasRunning = _this->running;
+            if (wasRunning) { stop(_this); }
             _this->refresh();
             _this->selectByName(_this->selectedDevName);
             core::setInputSampleRate(_this->sampleRate);
+            if (wasRunning) { start(_this); }
         }
-
-        if (_this->running) { SmGui::EndDisabled(); }
 
         // Rest of rtlsdr config here
         SmGui::LeftLabel("Direct Sampling");
