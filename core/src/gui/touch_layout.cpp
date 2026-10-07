@@ -325,24 +325,19 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
     bool drawerOpening = drawerOpen && !drawerWasOpen;
     drawerWasOpen = drawerOpen;
     if (drawerT > 0.001f) {
-        // Scrim
-        ImGui::SetNextWindowPos(ImVec2(0, 0));
-        ImGui::SetNextWindowSize(winSize);
-        ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.45f * drawerT));
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-        ImGui::Begin("##sdrpp_touch_scrim", NULL, OVERLAY_FLAGS | ImGuiWindowFlags_NoScrollbar);
-        if (drawerOpening) { ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow()); }
-        ImGui::SetCursorPos(ImVec2(0, 0));
-        if (ImGui::InvisibleButton("##sdrpp_touch_scrim_btn", winSize) && drawerOpen) {
-            drawerOpen = false;
-        }
-        ImGui::End();
-        ImGui::PopStyleVar();
-        ImGui::PopStyleColor();
-
-        // Drawer
+        // Scrim: drawn into the main window (below every overlay window), not as a window of
+        // its own. As a full-screen window, a tap beside the drawer brought it to the front and
+        // it dimmed the drawer itself (everything looked greyed out)
         float dw = std::min<float>(winSize.x * 0.85f, 420.0f * s);
         float dx = -(1.0f - ease(drawerT)) * dw;
+        ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(0, 0), winSize, IM_COL32(0, 0, 0, (int)(115.0f * drawerT)));
+        // A tap beside the drawer closes it (not while a combo / popup of the drawer is open)
+        if (drawerOpen && !drawerOpening && ImGui::IsMouseClicked(ImGuiMouseButton_Left) &&
+            ImGui::GetMousePos().x > dx + dw && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) {
+            drawerOpen = false;
+        }
+
+        // Drawer
         ImGui::SetNextWindowPos(ImVec2(dx, 0));
         ImGui::SetNextWindowSize(ImVec2(dw, winSize.y));
         ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.09f, 0.09f, 0.10f, 0.98f));
