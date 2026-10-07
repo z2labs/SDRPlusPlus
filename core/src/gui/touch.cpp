@@ -16,16 +16,17 @@ namespace touch {
 #endif
     Pinch pinch;
 
+    // TS_ prefix: Windows headers define IGNORE (and friends) as macros
     enum State {
-        IDLE,     // no finger
-        PENDING,  // finger down over a scrollable window, direction not known yet
-        PRESSED,  // forwarded to ImGui as a held mouse button
-        SCROLLING,
-        PINCHING,
-        IGNORE    // rest of the gesture is swallowed (after a pinch)
+        TS_IDLE,     // no finger
+        TS_PENDING,  // finger down over a scrollable window, direction not known yet
+        TS_PRESSED,  // forwarded to ImGui as a held mouse button
+        TS_SCROLLING,
+        TS_PINCHING,
+        TS_IGNORE    // rest of the gesture is swallowed (after a pinch)
     };
 
-    static State state = IDLE;
+    static State state = TS_IDLE;
     static ImVec2 downPos;
     static ImVec2 lastPos;
     static double downTime = 0.0;
@@ -93,11 +94,11 @@ namespace touch {
         io.AddMousePosEvent(at.x, at.y);
         io.AddMouseButtonEvent(0, true);
         if (cur.x != at.x || cur.y != at.y) { io.AddMousePosEvent(cur.x, cur.y); }
-        state = PRESSED;
+        state = TS_PRESSED;
     }
 
     void fingerDown(float x, float y) {
-        if (!ready()) { state = IDLE; return; }
+        if (!ready()) { state = TS_IDLE; return; }
         ImVec2 p(x, y);
         downPos = lastPos = p;
         downTime = lastMoveTime = now();
@@ -109,7 +110,7 @@ namespace touch {
         if (target) {
             // Show hover feedback, but hold the button back until we know the direction
             ImGui::GetIO().AddMousePosEvent(x, y);
-            state = PENDING;
+            state = TS_PENDING;
         }
         else {
             press(p, p);
@@ -117,14 +118,14 @@ namespace touch {
     }
 
     void fingerMove(float x, float y) {
-        if (!ready()) { state = IDLE; return; }
+        if (!ready()) { state = TS_IDLE; return; }
         ImVec2 p(x, y);
         double t = now();
         switch (state) {
-        case PENDING: {
+        case TS_PENDING: {
             float dx = fabsf(x - downPos.x), dy = fabsf(y - downPos.y);
             if (dy > slop() && dy > dx) {
-                state = SCROLLING;
+                state = TS_SCROLLING;
                 clearHover();
                 pendingScroll += y - lastPos.y;
             }
@@ -133,7 +134,7 @@ namespace touch {
             }
             break;
         }
-        case SCROLLING: {
+        case TS_SCROLLING: {
             float dy = y - lastPos.y;
             pendingScroll += dy;
             double dt = t - lastMoveTime;
@@ -143,7 +144,7 @@ namespace touch {
             }
             break;
         }
-        case PRESSED:
+        case TS_PRESSED:
             ImGui::GetIO().AddMousePosEvent(x, y);
             break;
         default:
@@ -154,21 +155,21 @@ namespace touch {
     }
 
     void fingerUp(float x, float y) {
-        if (!ready()) { state = IDLE; return; }
+        if (!ready()) { state = TS_IDLE; return; }
         ImGuiIO& io = ImGui::GetIO();
         switch (state) {
-        case PENDING:
+        case TS_PENDING:
             // Short tap: replay as a full click at the touch-down position
             press(downPos, downPos);
             io.AddMouseButtonEvent(0, false);
             clearHover();
             break;
-        case PRESSED:
+        case TS_PRESSED:
             io.AddMousePosEvent(x, y);
             io.AddMouseButtonEvent(0, false);
             clearHover();
             break;
-        case SCROLLING:
+        case TS_SCROLLING:
             if (now() - lastMoveTime > 0.08) { velocity = 0.0f; }
             if (fabsf(velocity) > 50.0f * style::uiScale) { flingTarget = target; }
             break;
@@ -176,18 +177,18 @@ namespace touch {
             clearHover();
             break;
         }
-        state = IDLE;
+        state = TS_IDLE;
     }
 
     void pinchBegin(ImVec2 p0, ImVec2 p1) {
-        if (!ready()) { state = IDLE; return; }
-        if (state == PRESSED) {
+        if (!ready()) { state = TS_IDLE; return; }
+        if (state == TS_PRESSED) {
             ImGuiIO& io = ImGui::GetIO();
             io.AddMouseButtonEvent(0, false);
         }
         clearHover();
         flingTarget = NULL;
-        state = PINCHING;
+        state = TS_PINCHING;
         pinchDist0 = std::max<float>(dist(p0, p1), 1.0f);
         pinch.factor = 1.0f;
         pinch.center = pinch.center0 = ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
@@ -196,25 +197,25 @@ namespace touch {
     }
 
     void pinchMove(ImVec2 p0, ImVec2 p1) {
-        if (state != PINCHING) { return; }
+        if (state != TS_PINCHING) { return; }
         pinch.factor = std::max<float>(dist(p0, p1), 1.0f) / pinchDist0;
         pinch.center = ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f);
     }
 
     void pinchEnd() {
         pinch.active = false;
-        state = IGNORE; // remaining finger does nothing until it is lifted
+        state = TS_IGNORE; // remaining finger does nothing until it is lifted
     }
 
     void cancel() {
         target = NULL;
         pinch.active = false;
-        if (!ready()) { flingTarget = NULL; state = IDLE; return; }
-        if (state == PRESSED) { ImGui::GetIO().AddMouseButtonEvent(0, false); }
+        if (!ready()) { flingTarget = NULL; state = TS_IDLE; return; }
+        if (state == TS_PRESSED) { ImGui::GetIO().AddMouseButtonEvent(0, false); }
         clearHover();
         pinch.active = false;
         flingTarget = NULL;
-        state = IDLE;
+        state = TS_IDLE;
     }
 
     void update() {
@@ -227,16 +228,16 @@ namespace touch {
         pinchStartPending = false;
 
         // A finger resting on a widget becomes a press (e.g. hold, then drag a slider)
-        if (state == PENDING && t - downTime > HOLD_TIME) {
+        if (state == TS_PENDING && t - downTime > HOLD_TIME) {
             press(downPos, lastPos);
         }
 
-        if (state == SCROLLING && target && pendingScroll != 0.0f) {
+        if (state == TS_SCROLLING && target && pendingScroll != 0.0f) {
             ImGui::SetScrollY(target, std::clamp<float>(target->Scroll.y - pendingScroll, 0.0f, target->ScrollMax.y));
             pendingScroll = 0.0f;
         }
 
-        if (state == IDLE && flingTarget) {
+        if (state == TS_IDLE && flingTarget) {
             float ny = flingTarget->Scroll.y - velocity * dt;
             if (ny <= 0.0f || ny >= flingTarget->ScrollMax.y || !flingTarget->Active) {
                 ny = std::clamp<float>(ny, 0.0f, flingTarget->ScrollMax.y);
