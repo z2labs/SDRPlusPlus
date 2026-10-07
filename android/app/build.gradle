@@ -9,8 +9,8 @@ android {
         applicationId "io.z2labs.sdrpp_esp"
         minSdkVersion 28
         targetSdkVersion 28
-        versionCode 1
-        versionName "1.2.1-esp"
+        versionCode 3
+        versionName "1.2.1-esp-0.3.0"
 
         externalNativeBuild {
             cmake {
