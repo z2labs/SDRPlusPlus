@@ -996,6 +996,7 @@ void MainWindow::pollUsbSdr() {
         return;
     }
     if (fd == lastUsbFd) { return; }
+    if (usbAutoStartPaused) { return; }   // a source is flashing its device: keep lastUsbFd for later
     lastUsbFd = fd;
 
     core::configManager.acquire();

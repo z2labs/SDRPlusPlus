@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <imgui/imgui.h>
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -22,6 +23,8 @@ public:
     void init();
     void draw();
     void drawUsbNotice();   // Android: wrong-USB-port card, drawn on top of everything
+    // Set by a source while it reflashes its device (the USB device comes and goes): no auto-start
+    std::atomic<bool> usbAutoStartPaused{false};
     void setViewBandwidthSlider(float bandwidth);
     bool sdrIsRunning();
     void setFirstMenuRender();
@@ -49,8 +52,8 @@ private:
     int lastUsbFd = -1;
     int usbPollFrames = 0;
     int lastUartHint = 0;
-    std::string usbNotice;   // shown as a dismissable card (wrong USB port...)
 #endif
+    std::string usbNotice;   // shown as a dismissable card (wrong USB port...)
 
     // Touch layout (gui/touch_layout.cpp)
     void drawTouchLayout(ImGui::WaterfallVFO* vfo);
