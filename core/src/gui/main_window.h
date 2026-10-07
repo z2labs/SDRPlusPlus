@@ -42,6 +42,11 @@ public:
 private:
     static void vfoAddedHandler(VFOManager::VFO* vfo, void* ctx);
     void drawMenu();
+#ifdef __ANDROID__
+    void pollUsbSdr();
+    double lastUsbPoll = 0.0;
+    int lastUsbFd = -1;
+#endif
 
     // Touch layout (gui/touch_layout.cpp)
     void drawTouchLayout(ImGui::WaterfallVFO* vfo);

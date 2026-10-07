@@ -1,3 +1,7 @@
+#include <gui/menus/source.h>
+#ifdef __ANDROID__
+#include <android_backend.h>
+#endif
 #include <gui/touch.h>
 #include <gui/main_window.h>
 #include <gui/gui.h>
@@ -260,6 +264,9 @@ void MainWindow::vfoAddedHandler(VFOManager::VFO* vfo, void* ctx) {
 }
 
 void MainWindow::draw() {
+#ifdef __ANDROID__
+    pollUsbSdr();
+#endif
     ImGui::Begin("Main", NULL, WINDOW_FLAGS);
     ImVec4 textCol = ImGui::GetStyleColorVec4(ImGuiCol_Text);
 
@@ -914,3 +921,46 @@ void MainWindow::updateAutoRange() {
     fftMin = std::clamp<float>(fftMin, -160.0f, 0.0f);
     fftMax = std::clamp<float>(fftMax, fftMin + 10.0f, 20.0f);
 }
+
+#ifdef __ANDROID__
+// Plug and play: when Android hands us a newly opened SDR (USB permission granted, at
+// start-up or when one is plugged in), select the matching source and start it.
+void MainWindow::pollUsbSdr() {
+    double now = ImGui::GetTime();
+    if (now - lastUsbPoll < 0.5) { return; }
+    lastUsbPoll = now;
+
+    int vid = 0, pid = 0;
+    int fd = backend::getDeviceFD(vid, pid, {});
+    if (fd < 0 || fd == lastUsbFd) { return; }
+    lastUsbFd = fd;
+
+    core::configManager.acquire();
+    bool enabled = core::configManager.conf["usbAutoStart"];
+    core::configManager.release();
+    if (!enabled) { return; }
+
+    auto matches = [vid, pid](const std::vector<backend::DevVIDPID>& list) {
+        for (auto const& vp : list) {
+            if (vp.vid == vid && vp.pid == pid) { return true; }
+        }
+        return false;
+    };
+    std::string source;
+    if (matches(backend::RTL_SDR_VIDPIDS)) { source = "RTL-SDR"; }
+    else if (vid == 0x303A && pid == 0x1001) { source = "ESP-SDR (ESP32-S3)"; }
+    else if (matches(backend::HACKRF_VIDPIDS)) { source = "HackRF"; }
+    else if (matches(backend::AIRSPY_VIDPIDS)) { source = "Airspy"; }
+    else if (matches(backend::AIRSPYHF_VIDPIDS)) { source = "Airspy HF+"; }
+    else if (matches(backend::HYDRASDR_VIDPIDS)) { source = "HydraSDR"; }
+    if (source.empty()) { return; }
+
+    flog::info("USB SDR {:04x}:{:04x} (fd {}): starting source '{}'", vid, pid, fd, source);
+    if (playing) { setPlayState(false); }
+    if (!sourcemenu::selectSourceByName(source)) {
+        flog::warn("USB auto-start: source '{}' is not loaded", source);
+        return;
+    }
+    setPlayState(true);
+}
+#endif

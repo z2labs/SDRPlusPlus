@@ -295,6 +295,8 @@ namespace ImGui {
         bool draggingFW = false;
         int FFTAreaHeight;
         int newFFTAreaHeight;
+        float resizeStartHeight = 0;
+        float resizeGrabOffset = 0;
 
         bool waterfallVisible = true;
         bool bandplanVisible = false;

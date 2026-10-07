@@ -1,8 +1,8 @@
 // Touch layout for SDR++ (Android): full-screen waterfall with floating controls.
 //
 //  - The waterfall fills the screen.
-//  - The frequency floats top-right. At rest it is 62 % size; touching it grows it to
-//    full size for 3 s. A tap on the small display only wakes it, it does not change digits.
+//  - A fixed strip on top holds the frequency (right) and the SNR meter (left). It never
+//    covers the spectrum or its frequency axis.
 //  - The controls live in a floating rail that slides in from the left. When it is
 //    hidden only a thin glowing handle shows. Tap the handle (or drag it right) to open,
 //    tap outside, or leave it alone for a few seconds, to close.
@@ -105,11 +105,9 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
     // ---- Animation state ----
     approach(railT, railOpen ? 1.0f : 0.0f, 16.0f, dt);
     approach(drawerT, drawerOpen ? 1.0f : 0.0f, 16.0f, dt);
-    bool freqHot = (now - freqLastTouch) < 3.0;
-    approach(freqT, freqHot ? 1.0f : 0.0f, 12.0f, dt);
 
     // ---- Who owns this touch? (overlay rects are from the previous frame) ----
-    bool overOverlay = inRect(mouse, freqRect) || (railT > 0.01f && inRect(mouse, railRect)) || (railT < 0.99f && inRect(mouse, handleRect));
+    bool overOverlay = (railT > 0.01f && inRect(mouse, railRect)) || (railT < 0.99f && inRect(mouse, handleRect));
     if (clicked && drawerT < 0.01f && !overOverlay && railOpen) {
         // Tap outside the rail closes it, and the tap must not also tune
         railOpen = false;
@@ -121,7 +119,38 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
 
     lockWaterfallControls = overOverlay || swallowTouch || drawerT > 0.01f;
 
-    // ---- Full-screen waterfall ----
+    // ---- Top strip: SNR meter (left) and frequency (right) ----
+    const ImVec2 wpad = ImGui::GetStyle().WindowPadding;
+    ImGui::PushFont(style::bigFont);
+    ImVec2 dsz = ImGui::CalcTextSize("0");
+    float need = (12.0f * dsz.x) + (3.0f * ImGui::CalcTextSize(".").x) + 15.0f;
+    ImGui::PopFont();
+    float availW = winSize.x - 2.0f * wpad.x;
+    float fscale = std::min<float>(0.75f, availW / need); // big enough for sunlight, leaves room for the meter
+    float digH = dsz.y * fscale;
+    float freqW = need * fscale;
+    float stripTop = wpad.y;
+    float stripH = digH + 4.0f * s;
+
+    float snrW = availW - freqW - 16.0f * s;
+    if (snrW > 140.0f * s) {
+        ImGui::SetCursorPos(ImVec2(wpad.x, stripTop + (stripH - 26.0f) / 2.0f));
+        ImGui::SetNextItemWidth(std::min<float>(snrW, 320.0f * s));
+        ImGui::SNRMeter((vfo != NULL) ? gui::waterfall.selectedVFOSNR : 0);
+    }
+    {
+        bool lockSave = lockWaterfallControls;
+        lockWaterfallControls = drawerT > 0.01f || (railT > 0.01f && inRect(mouse, railRect));
+        ImGui::SetWindowFontScale(fscale);
+        // the widget adds the window padding and centres the digits around the cursor itself
+        ImGui::SetCursorPos(ImVec2(winSize.x - wpad.x - freqW - wpad.x, stripTop + (digH / 2.0f) - ceilf(15 * s) - 5));
+        gui::freqSelect.draw();
+        ImGui::SetWindowFontScale(1.0f);
+        lockWaterfallControls = lockSave;
+    }
+
+    // ---- Waterfall (rest of the screen) ----
+    ImGui::SetCursorPos(ImVec2(wpad.x, stripTop + stripH + 4.0f * s));
     ImGui::BeginChild("Waterfall");
     gui::waterfall.draw();
     ImGui::EndChild();
@@ -140,43 +169,6 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
     const ImVec4 panelBg(0.10f, 0.10f, 0.11f, 0.90f);
     const ImU32 accent = ImGui::GetColorU32(ImGuiCol_SliderGrab);
 
-    // ---- Frequency (top right) ----
-    ImGui::PushFont(style::bigFont);
-    ImVec2 dsz = ImGui::CalcTextSize("0");
-    float need = (12.0f * dsz.x) + (3.0f * ImGui::CalcTextSize(".").x) + 15.0f;
-    ImGui::PopFont();
-    float freqPadX = 12.0f * s, freqPadY = 4.0f * s;
-    float maxW = winSize.x - (2.0f * pad) - (40.0f * s) - (2.0f * freqPadX);
-    float full = std::min<float>(1.0f, maxW / need);
-    float fscale = full * (0.62f + 0.38f * freqT);
-    ImVec2 fSize(need * fscale + 2.0f * freqPadX, dsz.y * fscale + 2.0f * freqPadY);
-    ImVec2 fPos(winSize.x - pad - fSize.x, pad);
-    float fullFreqH = dsz.y * full * 0.62f + 2.0f * freqPadY; // rail top is fixed to the small size
-
-    ImGui::SetNextWindowPos(fPos);
-    ImGui::SetNextWindowSize(fSize);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(freqPadX, freqPadY));
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f * s);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.0f, 0.0f, 0.0f, 0.45f + 0.25f * freqT));
-    ImGui::Begin("##sdrpp_touch_freq", NULL, OVERLAY_FLAGS | ImGuiWindowFlags_NoScrollbar);
-    {
-        if (down && ImGui::IsWindowHovered()) { freqLastTouch = now; }
-        // Digits only react when fully grown, so the waking tap never changes the frequency
-        bool lockSave = lockWaterfallControls;
-        lockWaterfallControls = (freqT < 0.95f) || drawerT > 0.01f;
-        float digH = dsz.y * fscale;
-        ImGui::SetWindowFontScale(fscale);
-        ImGui::SetCursorPos(ImVec2(0.0f, freqPadY + (digH / 2.0f) - ceilf(15 * s) - 5)); // the widget adds the window padding itself
-        gui::freqSelect.draw();
-        ImGui::SetWindowFontScale(1.0f);
-        lockWaterfallControls = lockSave;
-        freqRect = ImRect(fPos, fPos + fSize);
-    }
-    ImGui::End();
-    ImGui::PopStyleColor();
-    ImGui::PopStyleVar(3);
-
     // ---- Rail ----
     const float btn = 48.0f * s;
     const float gap = 8.0f * s;
@@ -184,7 +176,7 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
     const int fp = (int)(9.0f * s);
     const ImVec2 img(btn - 2 * fp, btn - 2 * fp);
     const float railW = 2.0f * btn + gap + 2.0f * railPad;
-    const float railTop = pad + fullFreqH + pad;
+    const float railTop = stripTop + stripH + pad;
     const float railAvail = winSize.y - railTop - pad;
     const float labelH = ImGui::GetTextLineHeight();
     const float fixedH = 2.0f * railPad + 3.0f * btn + 3.0f * gap + gap + labelH;

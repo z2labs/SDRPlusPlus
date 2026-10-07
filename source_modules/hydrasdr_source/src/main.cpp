@@ -241,6 +241,12 @@ private:
 
     static void menuSelected(void* ctx) {
         HydraSDRSourceModule* _this = (HydraSDRSourceModule*)ctx;
+#ifdef __ANDROID__
+        // The SDR may have been plugged in (or re-plugged) after the module started:
+        // pick up the current USB device so Start works without pressing Refresh.
+        _this->refresh();
+        _this->selectFirst();
+#endif
         core::setInputSampleRate(_this->sampleRate);
         flog::info("HydraSDRSourceModule '{0}': Menu Select!", _this->name);
     }

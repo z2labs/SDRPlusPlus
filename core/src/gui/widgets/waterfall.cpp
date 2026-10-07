@@ -7,6 +7,7 @@
 #include <utils/flog.h>
 #include <gui/gui.h>
 #include <gui/style.h>
+#include <gui/touch.h>
 
 float DEFAULT_COLOR_MAP[][3] = {
     { 0x00, 0x00, 0x20 },
@@ -260,7 +261,11 @@ namespace ImGui {
         bool mouseClicked = ImGui::ButtonBehavior(ImRect(fftAreaMin, wfMax), GetID("WaterfallID"), &mouseHovered, &mouseHeld,
                                                   ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_PressedOnClick);
 
-        mouseInFFTResize = (dragOrigin.x > widgetPos.x && dragOrigin.x < widgetPos.x + widgetSize.x && dragOrigin.y >= widgetPos.y + newFFTAreaHeight - (2.0f * style::uiScale) && dragOrigin.y <= widgetPos.y + newFFTAreaHeight + (2.0f * style::uiScale));
+        // Spectrum / waterfall divider: a finger needs a much taller grab zone than a mouse
+        // (more of it on the waterfall side, so the frequency axis above stays draggable for tuning)
+        float grabUp = (touch::enabled ? 8.0f : 2.0f) * style::uiScale;
+        float grabDown = (touch::enabled ? 18.0f : 2.0f) * style::uiScale;
+        mouseInFFTResize = (dragOrigin.x > widgetPos.x && dragOrigin.x < widgetPos.x + widgetSize.x && dragOrigin.y >= widgetPos.y + newFFTAreaHeight - grabUp && dragOrigin.y <= widgetPos.y + newFFTAreaHeight + grabDown);
         mouseInFreq = IS_IN_AREA(dragOrigin, freqAreaMin, freqAreaMax);
         mouseInFFT = IS_IN_AREA(dragOrigin, fftAreaMin, fftAreaMax);
         mouseInWaterfall = IS_IN_AREA(dragOrigin, wfMin, wfMax);
@@ -282,6 +287,16 @@ namespace ImGui {
         // Deselect everything if the mouse is released
         if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
             if (fftResizeSelect) {
+                // Touch: a tap on the divider (no drag) steps through 25 / 40 / 60 % spectrum height
+                if (touch::enabled && fabsf(newFFTAreaHeight - resizeStartHeight) < 6.0f * style::uiScale) {
+                    const float presets[3] = { 0.25f, 0.40f, 0.60f };
+                    float cur = newFFTAreaHeight / widgetSize.y;
+                    float next = presets[0];
+                    for (float pr : presets) {
+                        if (pr > cur + 0.03f) { next = pr; break; }
+                    }
+                    newFFTAreaHeight = std::clamp<float>(next * widgetSize.y, 150, widgetSize.y - 50);
+                }
                 FFTAreaHeight = newFFTAreaHeight;
                 onResize();
             }
@@ -300,6 +315,8 @@ namespace ImGui {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
             if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
                 fftResizeSelect = true;
+                resizeStartHeight = newFFTAreaHeight;
+                resizeGrabOffset = mousePos.y - (widgetPos.y + newFFTAreaHeight); // no jump to the finger
                 targetFound = true;
             }
         }
@@ -349,7 +366,7 @@ namespace ImGui {
         // If the FFT resize bar was selected, resize FFT accordingly
         if (fftResizeSelect) {
             ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-            newFFTAreaHeight = mousePos.y - widgetPos.y;
+            newFFTAreaHeight = mousePos.y - widgetPos.y - resizeGrabOffset;
             newFFTAreaHeight = std::clamp<float>(newFFTAreaHeight, 150, widgetSize.y - 50);
             ImGui::GetForegroundDrawList()->AddLine(ImVec2(widgetPos.x, newFFTAreaHeight + widgetPos.y), ImVec2(widgetEndPos.x, newFFTAreaHeight + widgetPos.y),
                                                     ImGui::GetColorU32(ImGuiCol_SeparatorActive), style::uiScale);
@@ -857,6 +874,14 @@ namespace ImGui {
         updateAllVFOs(true);
 
         drawFFT();
+        if (touch::enabled && waterfallVisible) {
+            // Grip on the spectrum / waterfall divider (drag it, or tap to step through presets)
+            float gy = widgetPos.y + newFFTAreaHeight;
+            float gw = 56.0f * style::uiScale, gh = 6.0f * style::uiScale;
+            float gx = widgetPos.x + (widgetSize.x - gw) / 2.0f;
+            ImU32 gc = fftResizeSelect ? ImGui::GetColorU32(ImGuiCol_SliderGrabActive) : ImGui::GetColorU32(ImGuiCol_Text, 0.45f);
+            window->DrawList->AddRectFilled(ImVec2(gx, gy - gh / 2.0f), ImVec2(gx + gw, gy + gh / 2.0f), gc, gh / 2.0f);
+        }
         if (waterfallVisible) {
             drawWaterfall();
         }

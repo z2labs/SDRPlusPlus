@@ -113,6 +113,16 @@ namespace sourcemenu {
         sigpath::sourceManager.selectSource(name);
     }
 
+    bool selectSourceByName(const std::string& name) {
+        refreshSources();
+        if (!sources.valueExists(name)) { return false; }
+        selectSource(name);
+        core::configManager.acquire();
+        core::configManager.conf["source"] = name;
+        core::configManager.release(true);
+        return true;
+    }
+
     void onSourcesChanged(std::string name, void* ctx) {
         // Update the source list
         refreshSources();

@@ -226,6 +226,12 @@ private:
 
     static void menuSelected(void* ctx) {
         AirspyHFSourceModule* _this = (AirspyHFSourceModule*)ctx;
+#ifdef __ANDROID__
+        // The SDR may have been plugged in (or re-plugged) after the module started:
+        // pick up the current USB device so Start works without pressing Refresh.
+        _this->refresh();
+        _this->selectFirst();
+#endif
         core::setInputSampleRate(_this->sampleRate);
         flog::info("AirspyHFSourceModule '{0}': Menu Select!", _this->name);
     }

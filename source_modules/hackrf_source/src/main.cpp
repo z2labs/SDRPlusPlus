@@ -226,6 +226,12 @@ public:
 private:
     static void menuSelected(void* ctx) {
         HackRFSourceModule* _this = (HackRFSourceModule*)ctx;
+#ifdef __ANDROID__
+        // The SDR may have been plugged in (or re-plugged) after the module started:
+        // pick up the current USB device so Start works without pressing Refresh.
+        _this->refresh();
+        _this->selectBySerial(_this->selectedSerial);
+#endif
         core::setInputSampleRate(_this->sampleRate);
         flog::info("HackRFSourceModule '{0}': Menu Select!", _this->name);
     }

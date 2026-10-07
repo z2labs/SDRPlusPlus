@@ -274,6 +274,12 @@ private:
 
     static void menuSelected(void* ctx) {
         RTLSDRSourceModule* _this = (RTLSDRSourceModule*)ctx;
+#ifdef __ANDROID__
+        // The SDR may have been plugged in (or re-plugged) after the module started:
+        // pick up the current USB device so Start works without pressing Refresh.
+        _this->refresh();
+        _this->selectByName(_this->selectedDevName);
+#endif
         core::setInputSampleRate(_this->sampleRate);
         flog::info("RTLSDRSourceModule '{0}': Menu Select!", _this->name);
     }

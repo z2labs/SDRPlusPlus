@@ -130,7 +130,11 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["fftRate"] = 20;
     defConfig["fftSize"] = 65536;
     defConfig["fftWindow"] = 2;
+#ifdef __ANDROID__
+    defConfig["frequency"] = 433920000.0; // first start: the 433 MHz ISM band always has traffic
+#else
     defConfig["frequency"] = 100000000.0;
+#endif
     defConfig["fullWaterfallUpdate"] = false;
     defConfig["max"] = 0.0;
     defConfig["maximized"] = false;
@@ -238,10 +242,12 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["uiScale"] = 0.0f; // 0 = automatic, from the display density
     defConfig["touchMode"] = true;
     defConfig["autoRange"] = true;
+    defConfig["usbAutoStart"] = true;
 #else
     defConfig["uiScale"] = 1.0f;
     defConfig["touchMode"] = false;
     defConfig["autoRange"] = false;
+    defConfig["usbAutoStart"] = false;
 #endif
 
     defConfig["modules"] = json::array();
