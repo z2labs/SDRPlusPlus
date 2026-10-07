@@ -1,5 +1,6 @@
 #include <gui/menus/source.h>
 #ifdef __ANDROID__
+#include "crashlog.h"
 #include <android_backend.h>
 #endif
 #include <gui/touch.h>
@@ -340,6 +341,9 @@ void MainWindow::draw() {
 
     // Touch devices: full-screen waterfall with floating controls (gui/touch_layout.cpp)
     if (touch::enabled) {
+#ifdef __ANDROID__
+        crashlog::step("drawTouchLayout");
+#endif
         drawTouchLayout(vfo);
         if (demoWindow) { ImGui::ShowDemoWindow(); }
         return;
@@ -720,6 +724,9 @@ void MainWindow::draw() {
 
     ImGui::EndChild();
 
+#ifdef __ANDROID__
+    crashlog::step("updateAutoRange");
+#endif
     if (autoRange) { updateAutoRange(); }
 
     gui::waterfall.setFFTMin(fftMin);
@@ -962,11 +969,19 @@ void MainWindow::pollUsbSdr() {
     if (source.empty()) { return; }
 
     flog::info("USB SDR {:04x}:{:04x} (fd {}): starting source '{}'", vid, pid, fd, source);
-    if (playing) { setPlayState(false); }
+    if (playing) {
+        crashlog::step("USB auto-start: stopping the running source");
+        setPlayState(false);
+    }
+    crashlog::step("USB auto-start: selecting the source");
     if (!sourcemenu::selectSourceByName(source)) {
         flog::warn("USB auto-start: source '{}' is not loaded", source);
         return;
     }
+    flog::info("USB auto-start: '{}' selected, starting", source);
+    crashlog::step("USB auto-start: starting the source");
     setPlayState(true);
+    flog::info("USB auto-start: started (playing = {})", playing);
+    crashlog::step("MainWindow::draw");
 }
 #endif

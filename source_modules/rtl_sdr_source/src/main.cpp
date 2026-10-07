@@ -1,3 +1,4 @@
+#include <atomic>
 #include <utils/flog.h>
 #include <module.h>
 #include <gui/gui.h>
@@ -180,7 +181,9 @@ public:
 #ifndef __ANDROID__
         int oret = rtlsdr_open(&openDev, id);
 #else
+        flog::info("RTL-SDR select: rtlsdr_open_sys_dev(fd {})", devFd);
         int oret = rtlsdr_open_sys_dev(&openDev, devFd);
+        flog::info("RTL-SDR select: open -> {}", oret);
 #endif
         
         if (oret < 0) {
@@ -192,7 +195,10 @@ public:
         gainList.clear();
         int gains[256];
         int n = rtlsdr_get_tuner_gains(openDev, gains);
+        flog::info("RTL-SDR select: tuner type {}, {} gains", (int)rtlsdr_get_tuner_type(openDev), n);
+        if (n < 0) { n = 0; }
         gainList = std::vector<int>(gains, gains + n);
+        if (gainList.empty()) { gainList.push_back(0); }
         std::sort(gainList.begin(), gainList.end());
 
         bool created = false;
@@ -255,6 +261,7 @@ public:
         config.release(created);
 
         rtlsdr_close(openDev);
+        flog::info("RTL-SDR select: closed again");
     }
 
 private:
@@ -300,7 +307,9 @@ private:
 #ifndef __ANDROID__
         int oret = rtlsdr_open(&_this->openDev, _this->devId);
 #else
+        flog::info("RTL-SDR start: rtlsdr_open_sys_dev(fd {})", _this->devFd);
         int oret = rtlsdr_open_sys_dev(&_this->openDev, _this->devFd);
+        flog::info("RTL-SDR start: open -> {}", oret);
 #endif
 
         if (oret < 0) {
@@ -326,9 +335,12 @@ private:
             rtlsdr_set_tuner_gain(_this->openDev, _this->gainList[_this->gainId]);
         }
         rtlsdr_set_offset_tuning(_this->openDev, _this->offsetTuning);
+        flog::info("RTL-SDR start: configured ({} S/s, {} Hz, gain #{} of {}, agc {}/{})", _this->sampleRate, _this->freq, _this->gainId, (int)_this->gainList.size(), _this->rtlAgc, _this->tunerAgc);
 
         _this->asyncCount = (int)roundf(_this->sampleRate / (200 * 512)) * 512;
 
+        _this->callbacks = 0;
+        _this->workerDone = false;
         _this->workerThread = std::thread(&RTLSDRSourceModule::worker, _this);
 
         _this->running = true;
@@ -339,10 +351,18 @@ private:
         RTLSDRSourceModule* _this = (RTLSDRSourceModule*)ctx;
         if (!_this->running) { return; }
         _this->running = false;
+        flog::info("RTL-SDR stop: cancelling ({} callbacks so far)", (uint64_t)_this->callbacks);
         _this->stream.stopWriter();
-        rtlsdr_cancel_async(_this->openDev);
+        // rtlsdr_cancel_async() is a no-op until the worker is inside rtlsdr_read_async():
+        // a stop right after a start used to leave join() waiting forever (frozen UI).
+        for (int i = 0; !_this->workerDone && i < 300; i++) {
+            rtlsdr_cancel_async(_this->openDev);
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (!_this->workerDone) { flog::error("RTL-SDR stop: worker still running after 3 s"); }
         if (_this->workerThread.joinable()) { _this->workerThread.join(); }
         _this->stream.clearWriteStop();
+        flog::info("RTL-SDR stop: worker joined, closing");
         rtlsdr_close(_this->openDev);
         flog::info("RTLSDRSourceModule '{0}': Stop!", _this->name);
     }
@@ -530,12 +550,17 @@ private:
     }
 
     void worker() {
+        flog::info("RTL-SDR worker: read_async ({} bytes per transfer)", asyncCount);
         rtlsdr_reset_buffer(openDev);
-        rtlsdr_read_async(openDev, asyncHandler, this, 0, asyncCount);
+        int r = rtlsdr_read_async(openDev, asyncHandler, this, 0, asyncCount);
+        flog::info("RTL-SDR worker: read_async returned {} after {} callbacks", r, (uint64_t)callbacks);
+        workerDone = true;
     }
 
     static void asyncHandler(unsigned char* buf, uint32_t len, void* ctx) {
         RTLSDRSourceModule* _this = (RTLSDRSourceModule*)ctx;
+        uint64_t cb = ++_this->callbacks;
+        if (cb == 1 || cb % 1000 == 0) { flog::info("RTL-SDR: callback #{} ({} bytes)", cb, len); }
         int sampCount = len / 2;
         for (int i = 0; i < sampCount; i++) {
             _this->stream.writeBuf[i].re = ((float)buf[i * 2] - 127.4) / 128.0f;
@@ -561,6 +586,8 @@ private:
     int srId = 0;
     int devCount = 0;
     std::thread workerThread;
+    std::atomic<bool> workerDone{ true };
+    std::atomic<uint64_t> callbacks{ 0 };
     bool serverMode = false;
 
 #ifdef __ANDROID__

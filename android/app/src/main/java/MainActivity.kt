@@ -72,6 +72,15 @@ class MainActivity : NativeActivity() {
     public var SDR_PID : Int = -1;
     public var SDR_FD : Int = -1;
 
+    // Field log: appended to the native log file (Download/sdrpp-log.txt), readable over MTP
+    fun flog(msg: String) {
+        Log.i(TAG, msg);
+        try {
+            val ts = java.text.SimpleDateFormat("HH:mm:ss.SSS", java.util.Locale.US).format(java.util.Date());
+            File("/storage/emulated/0/Download/sdrpp-log.txt").appendText("[" + ts + "] [JAVA] " + msg + "\n");
+        } catch (e: Exception) {}
+    }
+
     fun checkAndAsk(permission: String) {
         if (PermissionChecker.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, arrayOf(permission), 1);
@@ -111,9 +120,13 @@ class MainActivity : NativeActivity() {
     @Synchronized
     public fun openSdr(dev: UsbDevice) {
         if (!isSdr(dev)) { return; }
-        if (SDR_conn != null && SDR_device?.getDeviceName() == dev.getDeviceName()) { return; }
-        val conn = usbManager!!.openDevice(dev) ?: return;
-        Log.i(TAG, "SDR opened: " + dev.getDeviceName() + " fd " + conn.getFileDescriptor());
+        if (SDR_conn != null && SDR_device?.getDeviceName() == dev.getDeviceName()) {
+            flog("openSdr: " + dev.getDeviceName() + " already open (fd " + SDR_FD + ")");
+            return;
+        }
+        val conn = usbManager!!.openDevice(dev);
+        if (conn == null) { flog("openSdr: openDevice failed for " + dev.getDeviceName()); return; }
+        flog("openSdr: " + dev.getDeviceName() + String.format(" %04x:%04x", dev.getVendorId(), dev.getProductId()) + " fd " + conn.getFileDescriptor());
         SDR_device = dev;
         SDR_conn = conn;
         SDR_VID = dev.getVendorId();
@@ -126,7 +139,7 @@ class MainActivity : NativeActivity() {
     @Synchronized
     public fun sdrDetached(dev: UsbDevice) {
         if (SDR_device?.getDeviceName() != dev.getDeviceName()) { return; }
-        Log.i(TAG, "SDR detached: " + dev.getDeviceName());
+        flog("SDR detached: " + dev.getDeviceName());
         SDR_device = null;
         SDR_conn = null;
         SDR_FD = -1;
@@ -136,6 +149,7 @@ class MainActivity : NativeActivity() {
 
     public fun requestSdrPermission(dev: UsbDevice) {
         if (!isSdr(dev)) { return; }
+        flog("requestSdrPermission: " + dev.getDeviceName() + " hasPermission " + usbManager!!.hasPermission(dev));
         if (usbManager!!.hasPermission(dev)) {
             openSdr(dev);
         }
@@ -148,6 +162,7 @@ class MainActivity : NativeActivity() {
     // the system has already granted permission for that device.
     public override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent);
+        flog("onNewIntent: " + intent.action);
         if (UsbManager.ACTION_USB_DEVICE_ATTACHED == intent.action) {
             val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
             if (dev != null) { requestSdrPermission(dev); }
@@ -162,6 +177,7 @@ class MainActivity : NativeActivity() {
     }
 
     public override fun onCreate(savedInstanceState: Bundle?) {
+        flog("onCreate (saved state " + (savedInstanceState != null) + ", intent " + getIntent()?.action + ")");
         // Hide bars
         hideSystemBars();
 
@@ -191,13 +207,20 @@ class MainActivity : NativeActivity() {
         super.onCreate(savedInstanceState)
     }
 
+    public override fun onPause() {
+        flog("onPause");
+        super.onPause();
+    }
+
     public override fun onDestroy() {
+        flog("onDestroy (finishing " + isFinishing() + ")");
         try { unregisterReceiver(usbReceiver); } catch (e: Exception) {}
         try { unregisterReceiver(usbAttachReceiver); } catch (e: Exception) {}
         super.onDestroy();
     }
 
     public override fun onResume() {
+        flog("onResume");
         // Hide bars again
         hideSystemBars();
         super.onResume();

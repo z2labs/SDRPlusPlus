@@ -10,6 +10,7 @@
 
 #ifdef __ANDROID__
 #include <android/log.h>
+#include <unistd.h>
 #ifndef FLOG_ANDROID_TAG
 #define FLOG_ANDROID_TAG    "flog"
 #endif
@@ -21,6 +22,14 @@
 
 namespace flog {
     std::mutex outMtx;
+
+#ifdef __ANDROID__
+    static int androidFileFd = -1;
+    void setAndroidFileFd(int fd) {
+        std::lock_guard<std::mutex> lck(outMtx);
+        androidFileFd = fd;
+    }
+#endif
 
     const char* TYPE_STR[_TYPE_COUNT] = {
         "DEBUG",
@@ -171,6 +180,13 @@ namespace flog {
             // Print format string
             __android_log_print(TYPE_PRIORITIES[type], FLOG_ANDROID_TAG, COLOR_WHITE "[%02d/%02d/%02d %02d:%02d:%02d.%03d] [%s%s" COLOR_WHITE "] %s\n",
                     nowc->tm_mday, nowc->tm_mon + 1, nowc->tm_year + 1900, nowc->tm_hour, nowc->tm_min, nowc->tm_sec, 0, TYPE_COLORS[type], TYPE_STR[type], out.c_str());
+            if (androidFileFd >= 0) {
+                int ms = (int)(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000);
+                char head[64];
+                int hl = snprintf(head, sizeof(head), "[%02d:%02d:%02d.%03d] [%s] ", nowc->tm_hour, nowc->tm_min, nowc->tm_sec, ms, TYPE_STR[type]);
+                std::string line = std::string(head, hl) + out + "\n";
+                (void)!write(androidFileFd, line.data(), line.size());
+            }
 #else
             // Print format string
             fprintf(outStream, COLOR_WHITE "[%02d/%02d/%02d %02d:%02d:%02d.%03d] [%s%s" COLOR_WHITE "] %s\n",

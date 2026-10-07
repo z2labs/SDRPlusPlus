@@ -12,6 +12,11 @@ namespace flog {
         _TYPE_COUNT
     };
 
+#ifdef __ANDROID__
+    // Also append every line to this file descriptor (Android field log, see crashlog.cpp)
+    void setAndroidFileFd(int fd);
+#endif
+
     // IO functions
     void __log__(Type type, const char* fmt, const std::vector<std::string>& args);
 

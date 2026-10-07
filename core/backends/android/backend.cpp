@@ -15,6 +15,7 @@
 #include <gui/style.h>
 #include <gui/menus/theme.h>
 #include <gui/touch.h>
+#include "crashlog.h"
 #include <android/configuration.h>
 #include <filesystem>
 #include <algorithm>
@@ -132,6 +133,8 @@ namespace backend {
             int out_events;
             struct android_poll_source* out_data;
 
+            crashlog::frame();
+            crashlog::step("android event loop");
             while (ALooper_pollAll(0, NULL, &out_events, (void**)&out_data) >= 0) {
                 // Process one event
                 if (out_data != NULL) { out_data->process(app, out_data); }
@@ -229,6 +232,8 @@ namespace backend {
             int out_events;
             struct android_poll_source* out_data;
 
+            crashlog::frame();
+            crashlog::step("android event loop");
             while (ALooper_pollAll(0, NULL, &out_events, (void**)&out_data) >= 0) {
                 // Process one event
                 if (out_data != NULL) { out_data->process(app, out_data); }
@@ -270,8 +275,10 @@ namespace backend {
                 if (dsize.x > 0 && dsize.y > 0) {
                     ImGui::SetNextWindowPos(ImVec2(0, 0));
                     ImGui::SetNextWindowSize(ImVec2(dsize.x, dsize.y));
+                    crashlog::step("MainWindow::draw");
                     gui::mainWindow.draw();
                 }
+                crashlog::step("render / eglSwapBuffers");
                 render();
             }
             else {
@@ -520,6 +527,7 @@ extern "C" {
         app->onAppCmd = backend::handleAppCmd;
         app->onInputEvent = backend::handleInputEvent;
         backend::app = app;
+        crashlog::init();
 
         // Check if this is the first time we run or not
         if (backend::initialized) {
