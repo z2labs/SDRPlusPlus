@@ -932,7 +932,13 @@ void MainWindow::pollUsbSdr() {
 
     int vid = 0, pid = 0;
     int fd = backend::getDeviceFD(vid, pid, {});
-    if (fd < 0 || fd == lastUsbFd) { return; }
+    if (fd < 0) {
+        // Unplugged (or not yet permitted): the next fd is a new device even if Android
+        // happens to reuse the same descriptor number.
+        lastUsbFd = -1;
+        return;
+    }
+    if (fd == lastUsbFd) { return; }
     lastUsbFd = fd;
 
     core::configManager.acquire();

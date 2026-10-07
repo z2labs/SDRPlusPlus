@@ -46,14 +46,19 @@ private val usbReceiver = object : BroadcastReceiver() {
     }
 }
 
-// SDR plugged in while the app is running: ask for permission right away, so a
-// Refresh in the source menu finds it without restarting the app.
+// SDR plugged in while the app is running: ask for permission right away (it then
+// auto-starts); unplugged: forget it.
 private val usbAttachReceiver = object : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         if (UsbManager.ACTION_USB_DEVICE_ATTACHED == intent.action) {
             var _this = context as MainActivity;
             val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
             if (dev != null) { _this.requestSdrPermission(dev); }
+        }
+        else if (UsbManager.ACTION_USB_DEVICE_DETACHED == intent.action) {
+            var _this = context as MainActivity;
+            val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+            if (dev != null) { _this.sdrDetached(dev); }
         }
     }
 }
@@ -75,8 +80,40 @@ class MainActivity : NativeActivity() {
 
     public var permissionIntent : PendingIntent? = null;
 
+    // Supported SDR VID/PIDs (res/xml/device_filter.xml): only these are opened, so a
+    // hub, keyboard or charger on the same OTG port can never replace the SDR's fd.
+    private var sdrIds : HashSet<Int>? = null;
+
+    fun isSdr(dev: UsbDevice): Boolean {
+        if (sdrIds == null) {
+            val ids = HashSet<Int>();
+            try {
+                val xml = getResources().getXml(R.xml.device_filter);
+                var ev = xml.getEventType();
+                while (ev != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                    if (ev == org.xmlpull.v1.XmlPullParser.START_TAG && xml.getName() == "usb-device") {
+                        val v = xml.getAttributeIntValue(null, "vendor-id", -1);
+                        val p = xml.getAttributeIntValue(null, "product-id", -1);
+                        ids.add((v shl 16) or p);
+                    }
+                    ev = xml.next();
+                }
+            } catch (e: Exception) { Log.e(TAG, "device_filter: " + e); }
+            sdrIds = ids;
+        }
+        return sdrIds!!.contains((dev.getVendorId() shl 16) or dev.getProductId());
+    }
+
+    // Open the SDR once. The attach broadcast, onNewIntent, the permission answer and the
+    // start-up scan can all report the same device: opening it again would hand the native
+    // side a second fd for a device that is already streaming, and the restart that follows
+    // (old fd still claimed) froze the app right after the first audio.
+    @Synchronized
     public fun openSdr(dev: UsbDevice) {
+        if (!isSdr(dev)) { return; }
+        if (SDR_conn != null && SDR_device?.getDeviceName() == dev.getDeviceName()) { return; }
         val conn = usbManager!!.openDevice(dev) ?: return;
+        Log.i(TAG, "SDR opened: " + dev.getDeviceName() + " fd " + conn.getFileDescriptor());
         SDR_device = dev;
         SDR_conn = conn;
         SDR_VID = dev.getVendorId();
@@ -84,7 +121,21 @@ class MainActivity : NativeActivity() {
         SDR_FD = conn.getFileDescriptor();
     }
 
+    // The SDR was unplugged: forget it, so the next plug-in opens (and auto-starts) again.
+    // The connection itself is left to the native side, which may still be closing it.
+    @Synchronized
+    public fun sdrDetached(dev: UsbDevice) {
+        if (SDR_device?.getDeviceName() != dev.getDeviceName()) { return; }
+        Log.i(TAG, "SDR detached: " + dev.getDeviceName());
+        SDR_device = null;
+        SDR_conn = null;
+        SDR_FD = -1;
+        SDR_VID = -1;
+        SDR_PID = -1;
+    }
+
     public fun requestSdrPermission(dev: UsbDevice) {
+        if (!isSdr(dev)) { return; }
         if (usbManager!!.hasPermission(dev)) {
             openSdr(dev);
         }
@@ -124,7 +175,9 @@ class MainActivity : NativeActivity() {
         usbManager = getSystemService(Context.USB_SERVICE) as UsbManager;
         permissionIntent = PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION), 0)
         registerReceiver(usbReceiver, IntentFilter(ACTION_USB_PERMISSION))
-        registerReceiver(usbAttachReceiver, IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED))
+        val attachFilter = IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED);
+        attachFilter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+        registerReceiver(usbAttachReceiver, attachFilter)
 
         // Get permission for all USB devices already plugged in
         val devList = usbManager!!.getDeviceList();
