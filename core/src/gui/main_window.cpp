@@ -933,6 +933,10 @@ void MainWindow::updateAutoRange() {
 // Plug and play: when Android hands us a newly opened SDR (USB permission granted, at
 // start-up or when one is plugged in), select the matching source and start it.
 void MainWindow::pollUsbSdr() {
+    // Give the GUI a moment to lay out (waterfall sized, FFT buffers allocated) before a
+    // source starts streaming into it: on a cold start (app launched by plugging in the
+    // SDR) the first poll used to start the source before the first frame was drawn.
+    if (++usbPollFrames < 30) { return; }
     double now = ImGui::GetTime();
     if (now - lastUsbPoll < 0.5) { return; }
     lastUsbPoll = now;

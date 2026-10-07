@@ -901,7 +901,8 @@ namespace ImGui {
     float* WaterFall::getFFTBuffer() {
         if (rawFFTs == NULL) { return NULL; }
         buf_mtx.lock();
-        if (waterfallVisible) {
+        // Before the first layout (onResize) the waterfall has no lines yet: use line 0
+        if (waterfallVisible && waterfallHeight > 0) {
             currentFFTLine--;
             fftLines++;
             currentFFTLine = ((currentFFTLine + waterfallHeight) % waterfallHeight);
@@ -914,13 +915,18 @@ namespace ImGui {
     void WaterFall::pushFFT() {
         if (rawFFTs == NULL) { return; }
         std::lock_guard<std::recursive_mutex> lck(latestFFTMtx);
+        // Samples can arrive before the widget was ever laid out (a source started on the very
+        // first frame, e.g. USB auto-start on a cold start): waterfallHeight is still 0 and
+        // waterfallFb a 1-element placeholder, so the line scroll below would memmove a
+        // negative (huge) size. Nothing to draw yet: drop this FFT.
+        if (waterfallVisible && (waterfallHeight < 1 || dataWidth < 1 || !waterfallFb)) { return; }
         double offsetRatio = viewOffset / (wholeBandwidth / 2.0);
         int drawDataSize = (viewBandwidth / wholeBandwidth) * rawFFTSize;
         int drawDataStart = (((double)rawFFTSize / 2.0) * (offsetRatio + 1)) - (drawDataSize / 2);
 
         if (waterfallVisible) {
             doZoom(drawDataStart, drawDataSize, rawFFTSize, dataWidth, &rawFFTs[currentFFTLine * rawFFTSize], latestFFT);
-            memmove(&waterfallFb[dataWidth], waterfallFb, dataWidth * (waterfallHeight - 1) * sizeof(uint32_t));
+            if (waterfallHeight > 1) { memmove(&waterfallFb[dataWidth], waterfallFb, dataWidth * (waterfallHeight - 1) * sizeof(uint32_t)); }
             float pixel;
             float dataRange = waterfallMax - waterfallMin;
             for (int j = 0; j < dataWidth; j++) {

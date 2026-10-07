@@ -46,6 +46,7 @@ private:
     void pollUsbSdr();
     double lastUsbPoll = 0.0;
     int lastUsbFd = -1;
+    int usbPollFrames = 0;
 #endif
 
     // Touch layout (gui/touch_layout.cpp)

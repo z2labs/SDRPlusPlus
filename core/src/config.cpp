@@ -46,9 +46,28 @@ void ConfigManager::load(json def, bool lock) {
 
 void ConfigManager::save(bool lock) {
     if (lock) { mtx.lock(); }
-    std::ofstream file(path.c_str());
-    file << conf.dump(4);
-    file.close();
+    // Write a temporary file and rename it over the config: a crash or kill in the middle of
+    // a save must not leave an empty config.json behind (all settings lost).
+    std::string tmp = path + ".tmp";
+    {
+        std::ofstream file(tmp.c_str());
+        file << conf.dump(4);
+        file.flush();
+        if (!file.good()) {
+            file.close();
+            std::error_code rmEc;
+            std::filesystem::remove(tmp, rmEc);
+            if (lock) { mtx.unlock(); }
+            return;
+        }
+    }
+    std::error_code ec;
+    std::filesystem::rename(tmp, path, ec); // replaces the old file (MoveFileEx on Windows)
+    if (ec) {
+        std::filesystem::remove(tmp, ec);
+        std::ofstream file(path.c_str());
+        file << conf.dump(4);
+    }
     if (lock) { mtx.unlock(); }
 }
 
