@@ -38,6 +38,19 @@ namespace backend {
     int ShowSoftKeyboardInput();
     int PollUnicodeChars();
 
+    void setKeepScreenOn(bool on) {
+        if (!app || !app->activity) { return; }
+        ANativeActivity_setWindowFlags(app->activity, on ? AWINDOW_FLAG_KEEP_SCREEN_ON : 0,
+                                       on ? 0 : AWINDOW_FLAG_KEEP_SCREEN_ON);
+    }
+
+    static void applyKeepScreenOn() {
+        core::configManager.acquire();
+        bool on = !core::configManager.conf.contains("keepScreenOn") || (bool)core::configManager.conf["keepScreenOn"];
+        core::configManager.release();
+        setKeepScreenOn(on);
+    }
+
     void doPartialInit() {
         std::string root = (std::string)core::args["root"];
         backend::init();
@@ -47,6 +60,7 @@ namespace backend {
         ImGui::GetStyle().ScaleAllSizes(style::uiScale);
         if (touch::enabled) { touch::applyStyle(ImGui::GetStyle(), style::uiScale); }
         gui::mainWindow.setFirstMenuRender();
+        applyKeepScreenOn();
     }
 
     void handleAppCmd(struct android_app* app, int32_t appCmd) {
@@ -228,6 +242,7 @@ namespace backend {
     void setMouseScreenPos(double x, double y) {}
 
     int renderLoop() {
+        applyKeepScreenOn();
         while (true) {
             int out_events;
             struct android_poll_source* out_data;
@@ -277,6 +292,7 @@ namespace backend {
                     ImGui::SetNextWindowSize(ImVec2(dsize.x, dsize.y));
                     crashlog::step("MainWindow::draw");
                     gui::mainWindow.draw();
+                    gui::mainWindow.drawUsbNotice();
                 }
                 crashlog::step("render / eglSwapBuffers");
                 render();
@@ -339,6 +355,20 @@ namespace backend {
             return -5;
 
         return 0;
+    }
+
+    int getUartBridgeHint() {
+        JavaVM* java_vm = app->activity->vm;
+        JNIEnv* java_env = NULL;
+        if (java_vm->GetEnv((void**)&java_env, JNI_VERSION_1_6) == JNI_ERR) { return 0; }
+        if (java_vm->AttachCurrentThread(&java_env, NULL) != JNI_OK) { return 0; }
+        int hint = 0;
+        jclass clazz = java_env->GetObjectClass(app->activity->clazz);
+        jfieldID fid = clazz ? java_env->GetFieldID(clazz, "UART_HINT", "I") : NULL;
+        if (fid) { hint = java_env->GetIntField(app->activity->clazz, fid); }
+        else { java_env->ExceptionClear(); }
+        java_vm->DetachCurrentThread();
+        return hint;
     }
 
     int getDeviceFD(int& vid, int& pid, const std::vector<DevVIDPID>& allowedVidPids) {

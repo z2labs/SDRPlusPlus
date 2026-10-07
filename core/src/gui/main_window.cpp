@@ -4,6 +4,7 @@
 #include <android_backend.h>
 #endif
 #include <gui/touch.h>
+#include <version.h>
 #include <gui/main_window.h>
 #include <gui/gui.h>
 #include "imgui.h"
@@ -808,6 +809,7 @@ void MainWindow::drawMenu() {
         ImGui::Text("Framerate: %.1f FPS", ImGui::GetIO().Framerate);
         ImGui::Text("Center Frequency: %.0f Hz", gui::waterfall.getCenterFrequency());
         ImGui::Text("Source name: %s", sourceName.c_str());
+        ImGui::Text("Build: SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", " __DATE__ ")");
         ImGui::Checkbox("Show demo window", &demoWindow);
         ImGui::Text("ImGui version: %s", ImGui::GetVersion());
 
@@ -929,6 +931,31 @@ void MainWindow::updateAutoRange() {
     fftMax = std::clamp<float>(fftMax, fftMin + 10.0f, 20.0f);
 }
 
+void MainWindow::drawUsbNotice() {
+    if (usbNotice.empty()) { return; }
+    ImVec2 ds = ImGui::GetIO().DisplaySize;
+    float s = style::uiScale;
+    float w = std::min<float>(ds.x - 32.0f * s, 460.0f * s);
+    ImGui::SetNextWindowPos(ImVec2(ds.x / 2.0f, ds.y / 3.0f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(w, 0));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f * s);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(18.0f * s, 16.0f * s));
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.16f, 0.12f, 0.06f, 0.97f));
+    ImGui::Begin("##sdrpp_usb_notice", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                 ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize);
+    ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow());
+    ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Wrong USB port?");
+    ImGui::Spacing();
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextUnformatted(usbNotice.c_str());
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+    if (ImGui::Button("OK", ImVec2(-FLT_MIN, 44.0f * s))) { usbNotice.clear(); }
+    ImGui::End();
+    ImGui::PopStyleColor();
+    ImGui::PopStyleVar(2);
+}
+
 #ifdef __ANDROID__
 // Plug and play: when Android hands us a newly opened SDR (USB permission granted, at
 // start-up or when one is plugged in), select the matching source and start it.
@@ -940,6 +967,25 @@ void MainWindow::pollUsbSdr() {
     double now = ImGui::GetTime();
     if (now - lastUsbPoll < 0.5) { return; }
     lastUsbPoll = now;
+
+    // ESP32-S3 DevKit plugged in through its UART port: say which port to use instead
+    int uartHint = backend::getUartBridgeHint();
+    if (uartHint != lastUartHint) {
+        lastUartHint = uartHint;
+        if (uartHint) {
+            char buf[512];
+            snprintf(buf, sizeof(buf),
+                     "A USB-serial adapter is plugged in (%04x:%04x).\n\n"
+                     "On an ESP32-S3 DevKit this is the UART port. The SDR needs the native USB port: "
+                     "unplug and use the other USB-C connector (the left one, marked USB / JTAG).",
+                     (uartHint >> 16) & 0xFFFF, uartHint & 0xFFFF);
+            usbNotice = buf;
+            flog::warn("USB: UART bridge {:04x}:{:04x} plugged in, not an SDR", (uartHint >> 16) & 0xFFFF, uartHint & 0xFFFF);
+        }
+        else {
+            usbNotice.clear();
+        }
+    }
 
     int vid = 0, pid = 0;
     int fd = backend::getDeviceFD(vid, pid, {});

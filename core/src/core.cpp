@@ -243,6 +243,7 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["touchMode"] = true;
     defConfig["autoRange"] = true;
     defConfig["usbAutoStart"] = true;
+    defConfig["keepScreenOn"] = true;   // a measuring instrument: the display stays on
 #else
     defConfig["uiScale"] = 1.0f;
     defConfig["touchMode"] = false;

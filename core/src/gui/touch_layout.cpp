@@ -18,6 +18,7 @@
 #include <gui/widgets/snr_meter.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
+#include <version.h>
 #include <utils/flog.h>
 #ifndef IMGUI_DEFINE_MATH_OPERATORS
 #define IMGUI_DEFINE_MATH_OPERATORS
@@ -373,6 +374,7 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
             }
             ImGui::PopID();
             if (playButtonLocked && !tmpPlaying) { style::endDisabled(); }
+            ImGui::TextDisabled("SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", " __DATE__ ")");
             if (playing) {
                 ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "Stop to change the greyed-out source settings");
             }

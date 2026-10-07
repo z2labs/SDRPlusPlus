@@ -21,6 +21,7 @@ class MainWindow {
 public:
     void init();
     void draw();
+    void drawUsbNotice();   // Android: wrong-USB-port card, drawn on top of everything
     void setViewBandwidthSlider(float bandwidth);
     bool sdrIsRunning();
     void setFirstMenuRender();
@@ -47,6 +48,8 @@ private:
     double lastUsbPoll = 0.0;
     int lastUsbFd = -1;
     int usbPollFrames = 0;
+    int lastUartHint = 0;
+    std::string usbNotice;   // shown as a dismissable card (wrong USB port...)
 #endif
 
     // Touch layout (gui/touch_layout.cpp)

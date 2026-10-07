@@ -36,6 +36,15 @@ target_compile_options(sdrpp_core PRIVATE ${SDRPP_COMPILER_FLAGS})
 # Set the install prefix
 target_compile_definitions(sdrpp_core PUBLIC INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
 
+# Build identity shown in the UI (z2labs fork): short git revision of the checkout
+execute_process(COMMAND git rev-parse --short=7 HEAD
+                WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+                OUTPUT_VARIABLE SDRPP_GIT_REV OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if (NOT SDRPP_GIT_REV)
+    set(SDRPP_GIT_REV "unknown")
+endif ()
+target_compile_definitions(sdrpp_core PRIVATE SDRPP_GIT_REV="${SDRPP_GIT_REV}")
+
 # Include core headers
 target_include_directories(sdrpp_core PUBLIC "src/")
 target_include_directories(sdrpp_core PUBLIC "src/imgui")

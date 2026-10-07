@@ -8,6 +8,9 @@
 #include <gui/main_window.h>
 #include <signal_path/signal_path.h>
 #include <gui/style.h>
+#ifdef __ANDROID__
+#include <android_backend.h>
+#endif
 #include <utils/optionlist.h>
 #include <algorithm>
 
@@ -222,6 +225,22 @@ namespace displaymenu {
             core::configManager.conf["touchMode"] = touch::enabled;
             core::configManager.release(true);
             restartRequired = true;
+        }
+
+        // On by default: the app is an instrument, the display must not go dark mid-measurement
+        static bool keepScreenOn = true;
+        static bool keepLoaded = false;
+        if (!keepLoaded) {
+            core::configManager.acquire();
+            keepScreenOn = !core::configManager.conf.contains("keepScreenOn") || (bool)core::configManager.conf["keepScreenOn"];
+            core::configManager.release();
+            keepLoaded = true;
+        }
+        if (ImGui::Checkbox("Keep the screen on##sdrpp_keep_screen", &keepScreenOn)) {
+            backend::setKeepScreenOn(keepScreenOn);
+            core::configManager.acquire();
+            core::configManager.conf["keepScreenOn"] = keepScreenOn;
+            core::configManager.release(true);
         }
 #endif
 

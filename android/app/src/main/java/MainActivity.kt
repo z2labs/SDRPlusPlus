@@ -53,12 +53,12 @@ private val usbAttachReceiver = object : BroadcastReceiver() {
         if (UsbManager.ACTION_USB_DEVICE_ATTACHED == intent.action) {
             var _this = context as MainActivity;
             val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-            if (dev != null) { _this.requestSdrPermission(dev); }
+            if (dev != null) { _this.checkUartBridge(dev, true); _this.requestSdrPermission(dev); }
         }
         else if (UsbManager.ACTION_USB_DEVICE_DETACHED == intent.action) {
             var _this = context as MainActivity;
             val dev: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-            if (dev != null) { _this.sdrDetached(dev); }
+            if (dev != null) { _this.checkUartBridge(dev, false); _this.sdrDetached(dev); }
         }
     }
 }
@@ -71,6 +71,28 @@ class MainActivity : NativeActivity() {
     public var SDR_VID : Int = -1;
     public var SDR_PID : Int = -1;
     public var SDR_FD : Int = -1;
+    // USB-UART bridge seen ((vid shl 16) or pid), 0 if none: ESP32-S3 DevKit plugged into its UART port
+    public var UART_HINT : Int = 0;
+    private var uartHintDev : String? = null;
+
+    private val UART_BRIDGES = setOf(
+        (0x1a86 shl 16) or 0x55d3, (0x1a86 shl 16) or 0x55d4, (0x1a86 shl 16) or 0x7523,   // WCH CH343 / CH9102 / CH340
+        (0x10c4 shl 16) or 0xea60,                                                          // Silicon Labs CP210x
+        (0x0403 shl 16) or 0x6001, (0x0403 shl 16) or 0x6010, (0x0403 shl 16) or 0x6014, (0x0403 shl 16) or 0x6015)  // FTDI
+
+    public fun checkUartBridge(dev: UsbDevice, attached: Boolean) {
+        val id = (dev.getVendorId() shl 16) or dev.getProductId();
+        if (!UART_BRIDGES.contains(id)) { return; }
+        if (attached) {
+            uartHintDev = dev.getDeviceName();
+            UART_HINT = id;
+            flog("UART bridge plugged in: " + dev.getDeviceName() + String.format(" %04x:%04x", dev.getVendorId(), dev.getProductId()));
+        }
+        else if (uartHintDev == dev.getDeviceName()) {
+            uartHintDev = null;
+            UART_HINT = 0;
+        }
+    }
 
     // Field log: appended to the native log file (Download/sdrpp-log.txt), readable over MTP
     fun flog(msg: String) {
@@ -198,6 +220,7 @@ class MainActivity : NativeActivity() {
         // Get permission for all USB devices already plugged in
         val devList = usbManager!!.getDeviceList();
         for ((name, dev) in devList) {
+            checkUartBridge(dev, true);
             requestSdrPermission(dev);
         }
 

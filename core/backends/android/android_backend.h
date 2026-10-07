@@ -18,4 +18,9 @@ namespace backend {
     float getDisplayScale();
 
     int getDeviceFD(int& vid, int& pid, const std::vector<DevVIDPID>& allowedVidPids);
+    // A USB-UART bridge (CH343, CP210x, FTDI...) is plugged in: (vid << 16) | pid, else 0.
+    // On an ESP32-S3 DevKit that is the UART port, not the native USB the SDR needs.
+    int getUartBridgeHint();
+    // Keep the display on while the app is in front (config "keepScreenOn", default on)
+    void setKeepScreenOn(bool on);
 }
