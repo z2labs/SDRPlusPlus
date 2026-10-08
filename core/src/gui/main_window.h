@@ -25,6 +25,8 @@ public:
     void drawUsbNotice();   // Android: wrong-USB-port card, drawn on top of everything
     // Set by a source while it reflashes its device (the USB device comes and goes): no auto-start
     std::atomic<bool> usbAutoStartPaused{false};
+    // Set by a source from a worker thread (e.g. its device did not answer): stop on the next frame
+    std::atomic<bool> stopRequested{false};
     void setViewBandwidthSlider(float bandwidth);
     bool sdrIsRunning();
     void setFirstMenuRender();

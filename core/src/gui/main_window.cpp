@@ -266,6 +266,7 @@ void MainWindow::vfoAddedHandler(VFOManager::VFO* vfo, void* ctx) {
 }
 
 void MainWindow::draw() {
+    if (stopRequested.exchange(false) && playing) { setPlayState(false); }
 #ifdef __ANDROID__
     pollUsbSdr();
 #endif
