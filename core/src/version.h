@@ -5,5 +5,5 @@
 // z2labs fork: published as "Z2 SDR" (based on SDR++, GPL-3.0). VERSION_STR stays the SDR++
 // base version; APP_VERSION is ours.
 #define APP_NAME "Z2 SDR"
-#define APP_VERSION "0.3.2"
+#define APP_VERSION "0.3.3"
 #define SDRPP_ESP_VERSION "esp-" APP_VERSION
