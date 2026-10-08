@@ -1,4 +1,5 @@
 #pragma once
+#include <string>
 #include <vector>
 #include <stdint.h>
 
@@ -23,4 +24,6 @@ namespace backend {
     int getUartBridgeHint();
     // Keep the display on while the app is in front (config "keepScreenOn", default on)
     void setKeepScreenOn(bool on);
+    // Collect the logs, settings and device details and open the Android share sheet
+    void shareDebugReport(const std::string& header);
 }

@@ -833,6 +833,18 @@ void MainWindow::drawMenu() {
 
         ImGui::Spacing();
     }
+
+#ifdef __ANDROID__
+    // Bug reports: device, USB devices, app build, the recent logs and the configuration,
+    // handed to the Android share sheet (mail, messengers, Drive...)
+    ImGui::Spacing();
+    if (ImGui::Button("Export debug log##sdrpp_debug_export", ImVec2(-FLT_MIN, 0))) {
+        flog::info("Debug log export requested");
+        backend::shareDebugReport("SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", built " __DATE__ " " __TIME__ ")"
+                                  ", source: " + sourceName + (playing ? " (running)" : " (stopped)"));
+    }
+    ImGui::TextDisabled("Sends the log and settings, e.g. by mail, for a bug report");
+#endif
 }
 
 void MainWindow::handlePinchZoom(ImGui::WaterfallVFO* vfo) {

@@ -321,6 +321,75 @@ class MainActivity : NativeActivity() {
         return ecount;
     }
 
+    // Debug report for bug reports (Settings > Export debug log): device, USB and app details,
+    // the last two log files and the configuration, shared through the Android share sheet
+    // (mail, messengers, Drive, ...). header: SDR++ version and build line from the native side.
+    public fun shareDebugReport(header: String) {
+        try {
+            val dir = File(getCacheDir(), "reports");
+            dir.mkdirs();
+            val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date());
+            val out = File(dir, "sdrpp-esp-report-" + stamp + ".txt");
+            dir.listFiles()?.forEach { if (it != out) it.delete(); }
+            val sb = StringBuilder();
+            sb.append("SDR++ ESP debug report " + stamp + "\n");
+            sb.append(header + "\n");
+            try {
+                val pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+                sb.append("APK: " + getPackageName() + " " + pi.versionName + "\n");
+            } catch (e: Exception) {}
+            sb.append("Device: " + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL +
+                      " (" + android.os.Build.DEVICE + "), Android " + android.os.Build.VERSION.RELEASE +
+                      " (SDK " + android.os.Build.VERSION.SDK_INT + ")\n");
+            sb.append("USB devices:\n");
+            try {
+                val um = getSystemService(Context.USB_SERVICE) as UsbManager;
+                for (d in um.getDeviceList().values) {
+                    sb.append(String.format("  %04x:%04x %s %s/%s permission=%b\n", d.getVendorId(), d.getProductId(),
+                              d.getDeviceName(), d.getManufacturerName() ?: "?", d.getProductName() ?: "?", um.hasPermission(d)));
+                }
+            } catch (e: Exception) { sb.append("  (" + e + ")\n"); }
+            val logDir = "/storage/emulated/0/Download/";
+            for (name in arrayOf("sdrpp-log.2.txt", "sdrpp-log.1.txt", "sdrpp-log.txt")) {
+                val f = File(logDir + name);
+                if (!f.exists()) continue;
+                sb.append("\n===== " + name + " (" + f.length() + " bytes) =====\n");
+                sb.append(tail(f, 3 * 1024 * 1024));
+            }
+            val conf = File(getFilesDir(), "config.json");
+            if (conf.exists()) {
+                sb.append("\n===== config.json =====\n");
+                sb.append(tail(conf, 512 * 1024));
+            }
+            out.writeText(sb.toString());
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".reports", out);
+            val send = Intent(Intent.ACTION_SEND);
+            send.setType("text/plain");
+            send.putExtra(Intent.EXTRA_STREAM, uri);
+            send.putExtra(Intent.EXTRA_SUBJECT, "SDR++ ESP debug report " + stamp);
+            send.putExtra(Intent.EXTRA_TEXT, header + "\n" + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL +
+                          ", Android " + android.os.Build.VERSION.RELEASE + "\n\nWhat happened:\n");
+            send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            flog("debug report: " + out.getName() + " (" + out.length() + " bytes)");
+            runOnUiThread { startActivity(Intent.createChooser(send, "Send the SDR++ ESP debug report")); };
+        } catch (e: Exception) {
+            flog("debug report failed: " + e);
+        }
+    }
+
+    // Last maxBytes of a file as text (the start of a long log matters less than the end)
+    private fun tail(f: File, maxBytes: Int): String {
+        val len = f.length();
+        return RandomAccessFile(f, "r").use { r ->
+            val start = if (len > maxBytes) len - maxBytes else 0L;
+            r.seek(start);
+            val b = ByteArray((len - start).toInt());
+            r.readFully(b);
+            val text = String(b, Charsets.UTF_8);
+            if (start > 0) "[... " + start + " bytes left out ...]\n" + text else text
+        }
+    }
+
     public fun getAppDir(): String {
         val fdir = getFilesDir().getAbsolutePath();
 

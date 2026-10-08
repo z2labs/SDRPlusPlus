@@ -358,6 +358,22 @@ namespace backend {
         return 0;
     }
 
+    void shareDebugReport(const std::string& header) {
+        JavaVM* java_vm = app->activity->vm;
+        JNIEnv* java_env = NULL;
+        if (java_vm->GetEnv((void**)&java_env, JNI_VERSION_1_6) == JNI_ERR) { return; }
+        if (java_vm->AttachCurrentThread(&java_env, NULL) != JNI_OK) { return; }
+        jclass clazz = java_env->GetObjectClass(app->activity->clazz);
+        jmethodID mid = clazz ? java_env->GetMethodID(clazz, "shareDebugReport", "(Ljava/lang/String;)V") : NULL;
+        if (mid) {
+            jstring jh = java_env->NewStringUTF(header.c_str());
+            java_env->CallVoidMethod(app->activity->clazz, mid, jh);
+            java_env->DeleteLocalRef(jh);
+        }
+        if (java_env->ExceptionCheck()) { java_env->ExceptionClear(); }
+        java_vm->DetachCurrentThread();
+    }
+
     int getUartBridgeHint() {
         JavaVM* java_vm = app->activity->vm;
         JNIEnv* java_env = NULL;
