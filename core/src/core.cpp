@@ -278,7 +278,7 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["manualOffset"] = 0.0;
     defConfig["showMenu"] = true;
     defConfig["showWaterfall"] = true;
-    defConfig["source"] = "";
+    defConfig["source"] = "ESP-SDR (ESP32-S3)"; // fresh installs start on the ESP32-S3 source
     defConfig["decimation"] = 1;
     defConfig["iqCorrection"] = false;
     defConfig["invertIQ"] = false;
