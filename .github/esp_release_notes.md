@@ -1,6 +1,10 @@
 **Z2 SDR** is a touch-friendly fork of SDR++ for Android and desktop, with the ESP-SDR (ESP32-S3) source module: real IQ and the on-chip 16 / 40 / 80 MHz spectrum mode over the plain USB cable. It is not an official SDR++ release.
 
-### New in 0.3.5
+### New in 0.3.6
+- **4096 FFT bins** in spectrum mode (16 / 40 / 80 MHz), on ESP32-S3 modules with PSRAM (e.g. N16R8). Update the board with **Install firmware**, then pick "4096 (PSRAM boards)" under FFT bins. Boards without PSRAM keep 2048; the module falls back automatically.
+- Bundled firmware `4128c24`: SPEC buffers rearranged (heap instead of fixed RAM); both cores in use as before.
+
+### 0.3.5
 - **Menu:** after you use it, it stays out for a few seconds after the mouse leaves. **Pin menu** keeps it docked next to the spectrum; **Auto-hide menu** at its top folds it away again.
 - Packages are named `z2sdr_*`. The Linux package is now `z2sdr` (it replaces an installed `sdrpp` package, because both install the same files). macOS: `Z2SDR.app`.
 
