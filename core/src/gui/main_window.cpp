@@ -828,7 +828,7 @@ void MainWindow::drawMenu() {
         ImGui::Text("Framerate: %.1f FPS", ImGui::GetIO().Framerate);
         ImGui::Text("Center Frequency: %.0f Hz", gui::waterfall.getCenterFrequency());
         ImGui::Text("Source name: %s", sourceName.c_str());
-        ImGui::Text("Build: SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", " __DATE__ ")");
+        ImGui::Text("Build: " APP_NAME " " APP_VERSION " (" SDRPP_GIT_REV ", " __DATE__ "), based on SDR++ " VERSION_STR);
         ImGui::Checkbox("Show demo window", &demoWindow);
         ImGui::Text("ImGui version: %s", ImGui::GetVersion());
 
@@ -851,13 +851,18 @@ void MainWindow::drawMenu() {
         ImGui::Spacing();
     }
 
+    if (ImGui::CollapsingHeader("About " APP_NAME "##sdrpp_about")) {
+        credits::drawLicenseText();
+        ImGui::Spacing();
+    }
+
 #ifdef __ANDROID__
     // Bug reports: device, USB devices, app build, the recent logs and the configuration,
     // handed to the Android share sheet (mail, messengers, Drive...)
     ImGui::Spacing();
     if (ImGui::Button("Export debug log##sdrpp_debug_export", ImVec2(-FLT_MIN, 0))) {
         flog::info("Debug log export requested");
-        backend::shareDebugReport("SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", built " __DATE__ " " __TIME__ ")"
+        backend::shareDebugReport(APP_NAME " " APP_VERSION " (" SDRPP_GIT_REV ", built " __DATE__ " " __TIME__ "), based on SDR++ " VERSION_STR
                                   ", source: " + sourceName + (playing ? " (running)" : " (stopped)"));
     }
     ImGui::TextDisabled("Sends the log and settings, e.g. by mail, for a bug report");
@@ -865,7 +870,7 @@ void MainWindow::drawMenu() {
     ImGui::Spacing();
     if (ImGui::Button("Export debug log##sdrpp_debug_export", ImVec2(-FLT_MIN, 0))) {
         flog::info("Debug log export requested");
-        debugReportPath = exportDebugReport("SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", built " __DATE__ " " __TIME__ ")"
+        debugReportPath = exportDebugReport(APP_NAME " " APP_VERSION " (" SDRPP_GIT_REV ", built " __DATE__ " " __TIME__ "), based on SDR++ " VERSION_STR
                                             ", source: " + sourceName + (playing ? " (running)" : " (stopped)"));
     }
     if (!debugReportPath.empty()) {
@@ -897,13 +902,13 @@ std::string MainWindow::exportDebugReport(const std::string& header) {
     time_t t = time(NULL);
     char stamp[32];
     strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&t));
-    std::string path = dir + "/sdrpp-esp-report-" + stamp + ".txt";
+    std::string path = dir + "/z2sdr-report-" + stamp + ".txt";
     FILE* f = fopen(path.c_str(), "wb");
     if (!f) {
         flog::error("Debug report: cannot write {}", path);
         return "could not write " + path;
     }
-    fprintf(f, "SDR++ ESP debug report %s\n%s\n", stamp, header.c_str());
+    fprintf(f, APP_NAME " debug report %s\n%s\n", stamp, header.c_str());
 #if defined(_WIN32)
     fprintf(f, "Platform: Windows\n");
 #elif defined(__APPLE__)

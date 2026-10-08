@@ -3,7 +3,7 @@
     package="org.sdrpp.sdrpp">
 
     <application
-        android:label="SDR++ ESP"
+        android:label="Z2 SDR"
         android:allowBackup="false"
         android:fullBackupContent="false"
         android:hasCode="true">

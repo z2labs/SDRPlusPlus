@@ -355,7 +355,7 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
             ImGui::SameLine();
             float rowY = ImGui::GetCursorPosY();
             ImGui::SetCursorPosY(rowY + (btn - ImGui::GetTextLineHeight()) / 2.0f);
-            ImGui::TextUnformatted("SDR++");
+            ImGui::TextUnformatted(APP_NAME);
 
             // Play / stop here too: the source settings (device, sample rate, mode) can only be
             // changed while stopped, so stopping must not mean closing the drawer
@@ -374,7 +374,7 @@ void MainWindow::drawTouchLayout(ImGui::WaterfallVFO* vfo) {
             ImGui::PopID();
             ImGui::PopStyleColor(3);
             if (playButtonLocked && !tmpPlaying) { style::endDisabled(); }
-            ImGui::TextDisabled("SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", " __DATE__ ")");
+            ImGui::TextDisabled(APP_NAME " " APP_VERSION " (" SDRPP_GIT_REV ", " __DATE__ "), based on SDR++ " VERSION_STR);
 
             ImGui::BeginChild("##sdrpp_touch_drawer_scroll");
             drawMenu();

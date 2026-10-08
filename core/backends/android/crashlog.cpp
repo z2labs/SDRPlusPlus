@@ -199,11 +199,11 @@ namespace crashlog {
         done = true;
 
         const char* dirs[] = { "/storage/emulated/0/Download", "/sdcard/Download",
-                               "/storage/emulated/0/Android/data/io.z2labs.sdrpp_esp/files" };
+                               "/storage/emulated/0/Android/data/io.z2labs.z2sdr/files" };
         for (auto d : dirs) { if (openLog(d)) { break; } }
         if (fd < 0) { flog::warn("crashlog: no writable log directory"); return; }
         flog::setAndroidFileFd(fd);
-        outTime(); out("SDR++ ESP log start, pid "); outDec(getpid()); out("\n");
+        outTime(); out("Z2 SDR log start, pid "); outDec(getpid()); out("\n");
 
         // Signal handlers on their own stack (a stack overflow must still be reported)
         static char altStack[64 * 1024];

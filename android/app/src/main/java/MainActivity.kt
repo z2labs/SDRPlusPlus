@@ -329,10 +329,10 @@ class MainActivity : NativeActivity() {
             val dir = File(getCacheDir(), "reports");
             dir.mkdirs();
             val stamp = java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(java.util.Date());
-            val out = File(dir, "sdrpp-esp-report-" + stamp + ".txt");
+            val out = File(dir, "z2sdr-report-" + stamp + ".txt");
             dir.listFiles()?.forEach { if (it != out) it.delete(); }
             val sb = StringBuilder();
-            sb.append("SDR++ ESP debug report " + stamp + "\n");
+            sb.append("Z2 SDR debug report " + stamp + "\n");
             sb.append(header + "\n");
             try {
                 val pi = getPackageManager().getPackageInfo(getPackageName(), 0);
@@ -366,12 +366,12 @@ class MainActivity : NativeActivity() {
             val send = Intent(Intent.ACTION_SEND);
             send.setType("text/plain");
             send.putExtra(Intent.EXTRA_STREAM, uri);
-            send.putExtra(Intent.EXTRA_SUBJECT, "SDR++ ESP debug report " + stamp);
+            send.putExtra(Intent.EXTRA_SUBJECT, "Z2 SDR debug report " + stamp);
             send.putExtra(Intent.EXTRA_TEXT, header + "\n" + android.os.Build.MANUFACTURER + " " + android.os.Build.MODEL +
                           ", Android " + android.os.Build.VERSION.RELEASE + "\n\nWhat happened:\n");
             send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
             flog("debug report: " + out.getName() + " (" + out.length() + " bytes)");
-            runOnUiThread { startActivity(Intent.createChooser(send, "Send the SDR++ ESP debug report")); };
+            runOnUiThread { startActivity(Intent.createChooser(send, "Send the Z2 SDR debug report")); };
         } catch (e: Exception) {
             flog("debug report failed: " + e);
         }

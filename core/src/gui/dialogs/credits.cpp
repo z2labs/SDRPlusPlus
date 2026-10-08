@@ -14,6 +14,22 @@ namespace credits {
         imageSize = ImVec2(128.0f * style::uiScale, 128.0f * style::uiScale);
     }
 
+    // GPL-3.0: where the corresponding source of this build lives, and the licenses of what it
+    // bundles. Shown in the credits popup and in the menu (About), which touch mode uses.
+    void drawLicenseText() {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextUnformatted(APP_NAME " " APP_VERSION " by Zoltan Doczi (z2labs.io) is an unofficial fork of SDR++ " VERSION_STR
+                               " by Alexandre Rouma (ON5RYZ) and contributors. It is not an official SDR++ release.");
+        ImGui::TextUnformatted("License: GNU General Public License v3.0 (GPL-3.0-or-later). No warranty.");
+        ImGui::TextUnformatted("Source code of this build:");
+        ImGui::BulletText("App: github.com/z2labs/SDRPlusPlus (branch esp-sdr), based on github.com/AlexandreRouma/SDRPlusPlus");
+        ImGui::BulletText("ESP32-S3 source module: github.com/z2labs/sdrpp-esp-sdr-source");
+        ImGui::BulletText("Bundled ESP32-S3 firmware: github.com/zodoczi/esp-sdr (branch iq-smooth), based on ESP-SDR by "
+                          "Florian Euchner / ESPARGOS (GPL-3.0-or-later), with ESP-IDF and ESP-DSP (Apache-2.0)");
+        ImGui::BulletText("Libraries: see the SDR++ credits (volk, FFTW, Dear ImGui, json, librtlsdr, libusb and others)");
+        ImGui::PopTextWrapPos();
+    }
+
     void show() {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20.0f, 20.0f));
         ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0, 0, 0, 0));
@@ -24,7 +40,7 @@ namespace credits {
         ImGui::BeginPopupModal("Credits", NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoMove);
 
         ImGui::PushFont(style::hugeFont);
-        ImGui::TextUnformatted("SDR++          ");
+        ImGui::TextUnformatted(APP_NAME "          ");
         ImGui::PopFont();
         ImGui::SameLine();
         ImGui::Image(icons::LOGO, imageSize);
@@ -32,7 +48,7 @@ namespace credits {
         ImGui::Spacing();
         ImGui::Spacing();
 
-        ImGui::TextUnformatted("This software is brought to you by Alexandre Rouma (ON5RYZ) with the help of\n\n");
+        ImGui::TextUnformatted("SDR++, the base of " APP_NAME ", is brought to you by Alexandre Rouma (ON5RYZ) with the help of\n\n");
 
         ImGui::Columns(4, "CreditColumns", true);
 
@@ -64,7 +80,9 @@ namespace credits {
         ImGui::Spacing();
         ImGui::Spacing();
         ImGui::Spacing();
-        ImGui::TextUnformatted("SDR++ v" VERSION_STR " (Built at " __TIME__ ", " __DATE__ ")");
+        drawLicenseText();
+        ImGui::Spacing();
+        ImGui::TextUnformatted(APP_NAME " " APP_VERSION ", based on SDR++ v" VERSION_STR " (Built at " __TIME__ ", " __DATE__ ")");
 
         ImGui::EndPopup();
         ImGui::PopStyleColor();

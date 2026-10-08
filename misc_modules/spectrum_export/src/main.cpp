@@ -169,7 +169,7 @@ private:
 
     void writeHeader(FILE* fp, const Frame& f, int b0, int b1, int n) {
         const char* modes[] = { "snapshot", "average", "max hold" };
-        fprintf(fp, "# SDR++ spectrum export\n");
+        fprintf(fp, "# Z2 SDR spectrum export (SDR++ based)\n");
         fprintf(fp, "# time_utc,%s\n", timeStamp(false).c_str());
         std::string src;
         core::configManager.acquire();

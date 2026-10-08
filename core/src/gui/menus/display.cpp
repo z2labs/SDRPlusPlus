@@ -253,7 +253,7 @@ namespace displaymenu {
             core::configManager.release();
             playLoaded = true;
         }
-        if (ImGui::Checkbox("Start playback when SDR++ starts##sdrpp_play_on_start", &playOnStart)) {
+        if (ImGui::Checkbox("Start playback on launch##sdrpp_play_on_start", &playOnStart)) {
             core::configManager.acquire();
             core::configManager.conf["playOnStart"] = playOnStart;
             core::configManager.release(true);
