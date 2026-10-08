@@ -8,6 +8,9 @@
 #include <gui/main_window.h>
 #include <gui/gui.h>
 #include "imgui.h"
+#include <imgui/imgui_internal.h>
+#include <cmath>
+#include <algorithm>
 #include <stdio.h>
 #include <time.h>
 #ifdef _WIN32
@@ -202,6 +205,11 @@ void MainWindow::init() {
     double frequency = core::configManager.conf["frequency"];
 
     showMenu = core::configManager.conf["showMenu"];
+#ifdef __ANDROID__
+    autoHideMenu = core::configManager.conf.contains("autoHideMenu") && (bool)core::configManager.conf["autoHideMenu"];
+#else
+    autoHideMenu = !core::configManager.conf.contains("autoHideMenu") || (bool)core::configManager.conf["autoHideMenu"];
+#endif
     startedWithMenuClosed = !showMenu;
 
     gui::freqSelect.setFrequency(frequency);
@@ -380,10 +388,16 @@ void MainWindow::draw() {
     float ctrlColW = (touch::enabled ? 84.0f : 60.0f) * style::uiScale;
     ImGui::PushID(ImGui::GetID("sdrpp_menu_btn"));
     if (ImGui::ImageButton(icons::MENU, btnSize, ImVec2(0, 0), ImVec2(1, 1), 5, ImVec4(0, 0, 0, 0), textCol) || ImGui::IsKeyPressed(ImGuiKey_Menu, false)) {
-        showMenu = !showMenu;
-        core::configManager.acquire();
-        core::configManager.conf["showMenu"] = showMenu;
-        core::configManager.release(true);
+        if (autoHideMenu && !narrow) {
+            menuOverlayOpen = !menuOverlayOpen;
+            menuOverlayKeepUntil = ImGui::GetTime() + 3.0; // stays a moment even if the mouse never enters
+        }
+        else {
+            showMenu = !showMenu;
+            core::configManager.acquire();
+            core::configManager.conf["showMenu"] = showMenu;
+            core::configManager.release(true);
+        }
     }
     ImGui::PopID();
 
@@ -544,7 +558,8 @@ void MainWindow::draw() {
 
     // Handle menu resize
     ImVec2 mousePos = ImGui::GetMousePos();
-    if (!lockWaterfallControls && showMenu && !narrow) {
+    bool menuDocked = showMenu && (!autoHideMenu || narrow);
+    if (!lockWaterfallControls && menuDocked && !narrow) {
         float curY = ImGui::GetCursorPosY();
         bool click = ImGui::IsMouseClicked(ImGuiMouseButton_Left);
         bool down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
@@ -576,14 +591,15 @@ void MainWindow::draw() {
     displaymenu::checkKeybinds();
 
     // Left Column
-    if (showMenu && narrow) {
+    float menuTop = ImGui::GetCursorScreenPos().y;
+    if (menuDocked && narrow) {
         // Portrait: menu on top (full width), waterfall below
         float menuH = std::max<float>(ImGui::GetContentRegionAvail().y * 0.55f, 200.0f * style::uiScale);
         ImGui::BeginChild("Left Column", ImVec2(0, menuH));
         drawMenu();
         ImGui::EndChild();
     }
-    if (showMenu && !narrow) {
+    if (menuDocked && !narrow) {
         // The stored default (300 px) is far too narrow for finger-sized widgets
         if (touch::enabled && menuWidth < 200.0f * style::uiScale && !grabbingMenu) {
             menuWidth = newWidth = std::min<float>(200.0f * style::uiScale, winSize.x * 0.5f);
@@ -603,6 +619,9 @@ void MainWindow::draw() {
         ImGui::SetColumnWidth(1, winSize.x - (8 * style::uiScale) - ctrlColW);
         ImGui::SetColumnWidth(2, ctrlColW);
     }
+
+    if (autoHideMenu && !narrow) { drawMenuOverlay(menuTop, winSize); }
+    else { menuOverlayOpen = false; menuOverlayAnim = 0.0f; }
 
     // Right Column
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(0, 0));
@@ -797,6 +816,83 @@ bool MainWindow::isPlaying() {
 void MainWindow::setFirstMenuRender() {
     firstMenuRender = true;
 }
+// Desktop auto-hide menu: a thin glowing tab on the left edge. Resting the mouse on the
+// edge (or clicking the menu button) slides the menu in over the spectrum, so the
+// spectrum and waterfall never change size. It folds away again shortly after the mouse
+// leaves it, unless a widget or popup in it is still in use.
+void MainWindow::drawMenuOverlay(float top, ImVec2 winSize) {
+    ImGuiIO& io = ImGui::GetIO();
+    double now = ImGui::GetTime();
+    ImVec2 mp = ImGui::GetMousePos();
+    float scale = style::uiScale;
+    float h = winSize.y - top;
+    float w = std::clamp<float>(menuWidth, 250.0f * scale, std::max<float>(250.0f * scale, winSize.x * 0.6f));
+    float edgeW = 8.0f * scale;
+    bool anyDown = ImGui::IsMouseDown(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Right);
+    bool mouseValid = ImGui::IsMousePosValid(&mp);
+
+    // Open by resting on the left edge (not while dragging, e.g. a waterfall drag)
+    bool onEdge = mouseValid && mp.x >= 0.0f && mp.x < edgeW && mp.y > top && mp.y < winSize.y;
+    if (!menuOverlayOpen && onEdge && !anyDown && !lockWaterfallControls) {
+        if (menuEdgeSince < 0.0) { menuEdgeSince = now; }
+        if (now - menuEdgeSince > 0.12) { menuOverlayOpen = true; menuOverlayKeepUntil = now + 0.8; }
+    }
+    else if (!onEdge) {
+        menuEdgeSince = -1.0;
+    }
+
+    // Keep it open while the mouse is over it or anything in it is in use
+    float x = -w * (1.0f - menuOverlayAnim * menuOverlayAnim * (3.0f - 2.0f * menuOverlayAnim));
+    bool inside = mouseValid && mp.x < x + w + 4.0f * scale && mp.y > top;
+    bool popup = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
+    if (menuOverlayOpen) {
+        if (inside || popup) {
+            menuOverlayKeepUntil = std::max<double>(menuOverlayKeepUntil, now + 0.6);
+        }
+        // A click outside (below the top bar, whose menu button toggles it) closes it right away
+        if (!inside && !popup && mouseValid && mp.y > top && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+            menuOverlayOpen = false;
+        }
+        if (now > menuOverlayKeepUntil) { menuOverlayOpen = false; }
+    }
+
+    // Critically damped slide, ~150 ms
+    float target = menuOverlayOpen ? 1.0f : 0.0f;
+    menuOverlayAnim += (target - menuOverlayAnim) * (1.0f - expf(-16.0f * io.DeltaTime));
+    if (fabsf(target - menuOverlayAnim) < 0.002f) { menuOverlayAnim = target; }
+
+    // The tab on the edge, brighter when the mouse is near
+    ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (menuOverlayAnim < 1.0f) {
+        ImVec4 c = ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive);
+        c.w = (onEdge ? 0.95f : 0.45f) * (1.0f - menuOverlayAnim);
+        float th = std::min<float>(120.0f * scale, h * 0.3f);
+        float ty = top + (h - th) * 0.5f;
+        dl->AddRectFilled(ImVec2(1.0f * scale, ty), ImVec2(4.0f * scale, ty + th), ImGui::GetColorU32(c), 2.0f * scale);
+    }
+    if (menuOverlayAnim <= 0.0f) { return; }
+
+    // The waterfall under the menu reads the wheel directly; keep it for the menu only
+    if (inside) { io.MouseWheel = 0.0f; io.MouseWheelH = 0.0f; }
+
+    x = -w * (1.0f - menuOverlayAnim * menuOverlayAnim * (3.0f - 2.0f * menuOverlayAnim));
+    ImGui::SetNextWindowPos(ImVec2(x, top));
+    ImGui::SetNextWindowSize(ImVec2(w, h));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::Begin("##sdrpp_menu_overlay", NULL, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings |
+                                               ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PopStyleVar(2);
+    if (menuOverlayOpen && menuOverlayAnim < 0.5f) { ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow()); }
+    ImGui::BeginChild("Left Column");
+    drawMenu();
+    ImGui::EndChild();
+    // Shadow-like edge on the right
+    ImDrawList* odl = ImGui::GetWindowDrawList();
+    odl->AddLine(ImVec2(x + w - 1.0f, top), ImVec2(x + w - 1.0f, top + h), ImGui::GetColorU32(ImGuiCol_Separator), 1.0f);
+    ImGui::End();
+}
+
 void MainWindow::drawMenu() {
 
     if (gui::menu.draw(firstMenuRender)) {

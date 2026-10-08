@@ -47,6 +47,9 @@ public:
     bool isPlaying();
 
     bool lockWaterfallControls = false;
+    // Desktop: the menu folds away to the left edge and slides over the spectrum
+    // when the mouse reaches the edge (or the menu button is clicked).
+    bool autoHideMenu = false;
     bool playButtonLocked = false;
 
     Event<bool> onPlayStateChange;
@@ -54,6 +57,7 @@ public:
 private:
     static void vfoAddedHandler(VFOManager::VFO* vfo, void* ctx);
     void drawMenu();
+    void drawMenuOverlay(float top, ImVec2 winSize);
 #ifdef __ANDROID__
     void pollUsbSdr();
     double lastUsbPoll = 0.0;
@@ -117,6 +121,10 @@ private:
     int newWidth = 300;
     int fftHeight = 300;
     bool showMenu = true;
+    bool menuOverlayOpen = false;
+    float menuOverlayAnim = 0.0f;
+    double menuOverlayKeepUntil = 0.0;
+    double menuEdgeSince = -1.0;
     int tuningMode = tuner::TUNER_MODE_NORMAL;
     dsp::stream<dsp::complex_t> dummyStream;
     bool demoWindow = false;
