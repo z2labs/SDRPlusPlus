@@ -37,9 +37,13 @@ target_compile_options(sdrpp_core PRIVATE ${SDRPP_COMPILER_FLAGS})
 target_compile_definitions(sdrpp_core PUBLIC INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
 
 # Build identity shown in the UI (z2labs fork): short git revision of the checkout
-execute_process(COMMAND git rev-parse --short=7 HEAD
+execute_process(COMMAND git -c safe.directory=* rev-parse --short=7 HEAD
                 WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
                 OUTPUT_VARIABLE SDRPP_GIT_REV OUTPUT_STRIP_TRAILING_WHITESPACE ERROR_QUIET)
+if (NOT SDRPP_GIT_REV AND EXISTS "${CMAKE_SOURCE_DIR}/.git_rev")
+    # CI builds inside a container where git refuses the checkout: the workflow writes the revision
+    file(STRINGS "${CMAKE_SOURCE_DIR}/.git_rev" SDRPP_GIT_REV LIMIT_COUNT 1)
+endif ()
 if (NOT SDRPP_GIT_REV)
     set(SDRPP_GIT_REV "unknown")
 endif ()

@@ -27,6 +27,9 @@ jobs:
           working-directory: ${{runner.workspace}}/android-sdr-kit
           run: docker build --progress=plain -t android-sdr-kit .
 
+        - name: Record the git revision (git inside the container refuses the checkout)
+          run: git rev-parse --short=7 HEAD > .git_rev
+
         - name: Build
           run: docker run --name build -v $GITHUB_WORKSPACE:/root/SDRPlusPlus android-sdr-kit /bin/bash -l -c "cd /root/SDRPlusPlus/android && gradle --info assembleDebug"
 

@@ -27,6 +27,7 @@ public:
     std::atomic<bool> usbAutoStartPaused{false};
     // Set by a source from a worker thread (e.g. its device did not answer): stop on the next frame
     std::atomic<bool> stopRequested{false};
+    std::atomic<bool> startRequested{false};   // same, to start (e.g. after a firmware update)
     void setViewBandwidthSlider(float bandwidth);
     bool sdrIsRunning();
     void setFirstMenuRender();
