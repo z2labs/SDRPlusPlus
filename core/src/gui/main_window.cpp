@@ -681,8 +681,8 @@ void MainWindow::draw() {
     // Vertical sliders live here: in touch mode this column must never scroll, or a slider drag becomes a scroll
     ImGui::BeginChild("WaterfallControls", ImVec2(0, 0), false, touch::enabled ? (ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse) : 0);
 
-    // Automatic FFT / waterfall range (on by default in touch mode)
-    if (touch::enabled) {
+    // Automatic FFT / waterfall range (on by default)
+    {
         bool wasAuto = autoRange;
         if (wasAuto) { ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_SliderGrab)); }
         if (ImGui::Button("Auto##_sdrpp_auto_range", ImVec2(ImGui::GetContentRegionAvail().x, 0))) {
@@ -697,7 +697,7 @@ void MainWindow::draw() {
     ImGui::SetCursorPosX((ImGui::GetWindowSize().x - wfSliderW) / 2.0f);
     // Fit the three sliders (and the Auto button) into the column height (landscape phones)
     float colLabelH = ImGui::GetTextLineHeightWithSpacing();
-    float autoBtnH = touch::enabled ? (ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y) : 0.0f;
+    float autoBtnH = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemSpacing.y;
     float fixedH = autoBtnH + 3.0f * (colLabelH + ImGui::GetTextLineHeight() + ImGui::GetStyle().ItemSpacing.y * 2.0f);
     float sliderH = std::clamp<float>((ImGui::GetContentRegionAvail().y - fixedH) / 3.0f, 40.0f * style::uiScale, 150.0f * style::uiScale);
     ImVec2 wfSliderSize(wfSliderW, sliderH);

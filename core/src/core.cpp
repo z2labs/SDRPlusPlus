@@ -261,7 +261,7 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["uiScale"] = 1.0f;
     defConfig["touchMode"] = false;
     defConfig["playOnStart"] = true;   // z2labs: an instrument, start receiving right away
-    defConfig["autoRange"] = false;
+    defConfig["autoRange"] = true;
     defConfig["usbAutoStart"] = false;
 #endif
 
