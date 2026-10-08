@@ -211,7 +211,7 @@ bundle_create_plist() {
     echo '    <dict>' >> $8
     echo '        <key>CFBundleName</key><string>'$1'</string>' >> $8
     echo '        <key>CFBundleDisplayName</key><string>'$2'</string>' >> $8
-    echo '        <key>CFBundleIdentifier</key><string>o'$3'</string>' >> $8
+    echo '        <key>CFBundleIdentifier</key><string>'$3'</string>' >> $8
     echo '        <key>CFBundleVersion</key><string>'$4'</string>' >> $8
     echo '        <key>CFBundlePackageType</key><string>APPL</string>' >> $8
     echo '        <key>CFBundleSignature</key><string>'$5'</string>' >> $8

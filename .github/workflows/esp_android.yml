@@ -1,4 +1,4 @@
-name: SDR++ ESP (Android APK)
+name: Z2 SDR (Android APK)
 
 # z2labs fork: SDR++ with the ESP-SDR (ESP32-S3) source module and the external FFT input
 # (on-chip 16/40/80 MHz spectrum). Same build container as upstream's Android job.
@@ -35,7 +35,7 @@ jobs:
 
         - name: Recover APK
           working-directory: ${{runner.workspace}}
-          run: docker cp build:/root/SDRPlusPlus/android/app/build/outputs/apk/debug/app-debug.apk ./ && mv app-debug.apk sdrpp-esp.apk
+          run: docker cp build:/root/SDRPlusPlus/android/app/build/outputs/apk/debug/app-debug.apk ./ && mv app-debug.apk z2sdr.apk
 
         - name: Recover native libraries with symbols (crash reports in Download/sdrpp-log.txt)
           working-directory: ${{runner.workspace}}
@@ -48,18 +48,18 @@ jobs:
         - name: Save symbols
           uses: actions/upload-artifact@v4
           with:
-              name: sdrpp-esp-android-symbols
+              name: z2sdr-android-symbols
               path: ${{runner.workspace}}/symbols/**/arm64-v8a/*.so
 
         - name: Save APK
           uses: actions/upload-artifact@v4
           with:
-              name: sdrpp-esp-android
-              path: ${{runner.workspace}}/sdrpp-esp.apk
+              name: z2sdr-android
+              path: ${{runner.workspace}}/z2sdr.apk
 
         - name: Release (tags esp-v*)
           if: startsWith(github.ref, 'refs/tags/esp-v')
           uses: softprops/action-gh-release@v2
           with:
               body_path: .github/esp_release_notes.md
-              files: ${{runner.workspace}}/sdrpp-esp.apk
+              files: ${{runner.workspace}}/z2sdr.apk

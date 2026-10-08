@@ -258,11 +258,9 @@ namespace displaymenu {
             core::configManager.conf["playOnStart"] = playOnStart;
             core::configManager.release(true);
         }
-        if (ImGui::Checkbox("Auto-hide menu##sdrpp_auto_hide_menu", &gui::mainWindow.autoHideMenu)) {
-            core::configManager.acquire();
-            core::configManager.conf["autoHideMenu"] = gui::mainWindow.autoHideMenu;
-            if (!gui::mainWindow.autoHideMenu) { core::configManager.conf["showMenu"] = true; }
-            core::configManager.release(true);
+        bool autoHide = gui::mainWindow.autoHideMenu;
+        if (ImGui::Checkbox("Auto-hide menu##sdrpp_auto_hide_menu", &autoHide)) {
+            gui::mainWindow.setMenuPinned(!autoHide);
         }
         if (ImGui::IsItemHovered()) {
             ImGui::SetTooltip("The menu folds away to the left edge. Move the mouse to the edge or click the menu button to open it.");

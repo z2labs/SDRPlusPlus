@@ -50,6 +50,7 @@ public:
     // Desktop: the menu folds away to the left edge and slides over the spectrum
     // when the mouse reaches the edge (or the menu button is clicked).
     bool autoHideMenu = false;
+    void setMenuPinned(bool pinned);
     bool playButtonLocked = false;
 
     Event<bool> onPlayStateChange;
@@ -125,6 +126,7 @@ private:
     float menuOverlayAnim = 0.0f;
     double menuOverlayKeepUntil = 0.0;
     double menuEdgeSince = -1.0;
+    double menuOverlayUsedAt = -100.0;
     int tuningMode = tuner::TUNER_MODE_NORMAL;
     dsp::stream<dsp::complex_t> dummyStream;
     bool demoWindow = false;

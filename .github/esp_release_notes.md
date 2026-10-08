@@ -1,6 +1,10 @@
 **Z2 SDR** is a touch-friendly fork of SDR++ for Android and desktop, with the ESP-SDR (ESP32-S3) source module: real IQ and the on-chip 16 / 40 / 80 MHz spectrum mode over the plain USB cable. It is not an official SDR++ release.
 
-### New in 0.3.4
+### New in 0.3.5
+- **Menu:** after you use it, it stays out for a few seconds after the mouse leaves. **Pin menu** keeps it docked next to the spectrum; **Auto-hide menu** at its top folds it away again.
+- Packages are named `z2sdr_*`. The Linux package is now `z2sdr` (it replaces an installed `sdrpp` package, because both install the same files). macOS: `Z2SDR.app`.
+
+### 0.3.4
 - **Desktop: the menu hides itself.** It folds away to the left edge, so the spectrum and waterfall use the full width. Move the mouse to the left edge or click the menu button to slide it in over the spectrum; it folds away again when the mouse leaves. Switch it off under Display, "Auto-hide menu".
 - A fresh install starts on the ESP-SDR source (it used to start on Airspy).
 
@@ -17,15 +21,15 @@
 
 | Package | Platform |
 | --- | --- |
-| `sdrpp-esp_windows_x64.zip` | Windows 10/11 x64. Unzip and run `sdrpp.exe`. |
-| `sdrpp-esp_macos_arm.zip` | macOS, Apple Silicon. |
-| `sdrpp-esp_debian_bookworm_amd64.deb` | Debian 12 x64. |
-| `sdrpp-esp_ubuntu_noble_amd64.deb` | Ubuntu 24.04 x64. |
-| `sdrpp-esp.apk` | Android (arm64). Use USB OTG to the board's native USB port. |
+| `z2sdr_windows_x64.zip` | Windows 10/11 x64. Unzip and run `sdrpp.exe`. |
+| `z2sdr_macos_arm.zip` | macOS, Apple Silicon. |
+| `z2sdr_debian_bookworm_amd64.deb` | Debian 12 x64. |
+| `z2sdr_ubuntu_noble_amd64.deb` | Ubuntu 24.04 x64. |
+| `z2sdr.apk` | Android (arm64). Use USB OTG to the board's native USB port. |
 
 Notes:
 - **Firmware:** the bundled firmware is installed from the source menu. Firmware source: https://github.com/zodoczi/esp-sdr (based on ESPARGOS/esp-sdr). Module and documentation: https://github.com/z2labs/sdrpp-esp-sdr-source
 - **SDRplay on macOS and Linux:** these packages have no SDRplay module (the SDRplay 3.15 installers are no longer downloadable). The Windows package includes it.
-- **The .deb packages** use the same package name as the official SDR++, so installing one replaces an official SDR++ installation.
+- **The .deb packages** (package `z2sdr`) install the same files as the official SDR++, so installing one removes an installed `sdrpp` package.
 
 Built on SDR++ by Alexandre Rouma and ESP-SDR by Florian Euchner (ESPARGOS); GPL-3.0. Z2 SDR by Zoltan Doczi, https://www.z2labs.io

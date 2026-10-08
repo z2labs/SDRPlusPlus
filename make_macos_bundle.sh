@@ -22,7 +22,7 @@ cp -R root/res/* $BUNDLE/Contents/Resources/
 bundle_create_icns root/res/icons/sdrpp.macos.png $BUNDLE/Contents/Resources/sdrpp
 
 # Create the property list
-bundle_create_plist sdrpp SDR++ org.sdrpp.sdrpp 1.2.1 sdrp sdrpp sdrpp $BUNDLE/Contents/Info.plist
+bundle_create_plist sdrpp "Z2 SDR" io.z2labs.z2sdr 0.3.5 z2sd sdrpp sdrpp $BUNDLE/Contents/Info.plist
 
 # ========================= Install binaries =========================
 

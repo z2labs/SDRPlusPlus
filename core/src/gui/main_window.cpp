@@ -608,6 +608,10 @@ void MainWindow::draw() {
         ImGui::SetColumnWidth(0, menuWidth);
         ImGui::SetColumnWidth(1, std::max<int>(winSize.x - menuWidth - ctrlColW, 100.0f * style::uiScale));
         ImGui::SetColumnWidth(2, ctrlColW);
+#ifndef __ANDROID__
+        if (!touch::enabled && ImGui::Button("Auto-hide menu##sdrpp_menu_unpin", ImVec2(ImGui::GetContentRegionAvail().x, 0))) { setMenuPinned(false); }
+        if (!touch::enabled && ImGui::IsItemHovered()) { ImGui::SetTooltip("Fold the menu away to the left edge when it is not used"); }
+#endif
         ImGui::BeginChild("Left Column");
         drawMenu();
         ImGui::EndChild();
@@ -846,11 +850,17 @@ void MainWindow::drawMenuOverlay(float top, ImVec2 winSize) {
     bool inside = mouseValid && mp.x < x + w + 4.0f * scale && mp.y > top;
     bool popup = ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel);
     if (menuOverlayOpen) {
+        // Used (clicked, dragged, scrolled in it): stays out a while after the mouse leaves
+        if (inside && menuOverlayAnim > 0.5f && (ImGui::IsMouseClicked(ImGuiMouseButton_Left) || ImGui::IsMouseDown(ImGuiMouseButton_Left) ||
+                                                 io.MouseWheel != 0.0f || ImGui::IsAnyItemActive())) {
+            menuOverlayUsedAt = now;
+        }
+        bool recentlyUsed = now - menuOverlayUsedAt < 6.0;
         if (inside || popup) {
-            menuOverlayKeepUntil = std::max<double>(menuOverlayKeepUntil, now + 0.6);
+            menuOverlayKeepUntil = std::max<double>(menuOverlayKeepUntil, now + (recentlyUsed ? 6.0 : 0.6));
         }
         // A click outside (below the top bar, whose menu button toggles it) closes it right away
-        if (!inside && !popup && mouseValid && mp.y > top && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (!inside && !popup && !recentlyUsed && mouseValid && mp.y > top && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             menuOverlayOpen = false;
         }
         if (now > menuOverlayKeepUntil) { menuOverlayOpen = false; }
@@ -884,6 +894,8 @@ void MainWindow::drawMenuOverlay(float top, ImVec2 winSize) {
                                                ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar(2);
     if (menuOverlayOpen && menuOverlayAnim < 0.5f) { ImGui::BringWindowToDisplayFront(ImGui::GetCurrentWindow()); }
+    if (ImGui::Button("Pin menu##sdrpp_menu_pin", ImVec2(ImGui::GetContentRegionAvail().x, 0))) { setMenuPinned(true); }
+    if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Keep the menu open next to the spectrum"); }
     ImGui::BeginChild("Left Column");
     drawMenu();
     ImGui::EndChild();
@@ -891,6 +903,17 @@ void MainWindow::drawMenuOverlay(float top, ImVec2 winSize) {
     ImDrawList* odl = ImGui::GetWindowDrawList();
     odl->AddLine(ImVec2(x + w - 1.0f, top), ImVec2(x + w - 1.0f, top + h), ImGui::GetColorU32(ImGuiCol_Separator), 1.0f);
     ImGui::End();
+}
+
+void MainWindow::setMenuPinned(bool pinned) {
+    autoHideMenu = !pinned;
+    showMenu = true;
+    menuOverlayOpen = false;
+    menuOverlayAnim = 0.0f;
+    core::configManager.acquire();
+    core::configManager.conf["autoHideMenu"] = autoHideMenu;
+    core::configManager.conf["showMenu"] = true;
+    core::configManager.release(true);
 }
 
 void MainWindow::drawMenu() {

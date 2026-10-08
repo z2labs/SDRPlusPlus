@@ -1,4 +1,4 @@
-name: SDR++ ESP (Windows, macOS, Debian)
+name: Z2 SDR (Windows, macOS, Debian)
 
 # z2labs fork: complete, runnable SDR++ packages with the ESP-SDR (ESP32-S3) source module and the
 # external FFT input (on-chip 16/40/80 MHz spectrum). Jobs are upstream's build_all.yml jobs with
@@ -98,13 +98,13 @@ jobs:
 
         - name: Rename package
           working-directory: ${{runner.workspace}}
-          run: mv sdrpp_windows_x64.zip sdrpp-esp_windows_x64.zip
+          run: mv sdrpp_windows_x64.zip z2sdr_windows_x64.zip
 
         - name: Save Archive
           uses: actions/upload-artifact@v4
           with:
-              name: sdrpp-esp_windows_x64
-              path: ${{runner.workspace}}/sdrpp-esp_windows_x64.zip
+              name: z2sdr_windows_x64
+              path: ${{runner.workspace}}/z2sdr_windows_x64.zip
 
     build_macos_arm:
         runs-on: macos-15
@@ -161,17 +161,17 @@ jobs:
 
         - name: Create Archive
           working-directory: ${{runner.workspace}}
-          run: cd $GITHUB_WORKSPACE && sh make_macos_bundle.sh ${{runner.workspace}}/build ./SDR++.app && zip -r ${{runner.workspace}}/sdrpp_macos_arm.zip SDR++.app
+          run: cd $GITHUB_WORKSPACE && sh make_macos_bundle.sh ${{runner.workspace}}/build ./Z2SDR.app && zip -r ${{runner.workspace}}/sdrpp_macos_arm.zip Z2SDR.app
 
         - name: Rename package
           working-directory: ${{runner.workspace}}
-          run: mv sdrpp_macos_arm.zip sdrpp-esp_macos_arm.zip
+          run: mv sdrpp_macos_arm.zip z2sdr_macos_arm.zip
 
         - name: Save Archive
           uses: actions/upload-artifact@v4
           with:
-              name: sdrpp-esp_macos_arm
-              path: ${{runner.workspace}}/sdrpp-esp_macos_arm.zip
+              name: z2sdr_macos_arm
+              path: ${{runner.workspace}}/z2sdr_macos_arm.zip
 
     build_debian_bookworm_amd64:
         runs-on: ubuntu-latest
@@ -196,13 +196,13 @@ jobs:
 
         - name: Rename package
           working-directory: ${{runner.workspace}}
-          run: mv sdrpp_debian_amd64.deb sdrpp-esp_debian_bookworm_amd64.deb
+          run: mv sdrpp_debian_amd64.deb z2sdr_debian_bookworm_amd64.deb
 
         - name: Save Deb Archive
           uses: actions/upload-artifact@v4
           with:
-              name: sdrpp-esp_debian_bookworm_amd64
-              path: ${{runner.workspace}}/sdrpp-esp_debian_bookworm_amd64.deb
+              name: z2sdr_debian_bookworm_amd64
+              path: ${{runner.workspace}}/z2sdr_debian_bookworm_amd64.deb
 
     build_ubuntu_noble_amd64:
         runs-on: ubuntu-latest
@@ -227,13 +227,13 @@ jobs:
 
         - name: Rename package
           working-directory: ${{runner.workspace}}
-          run: mv sdrpp_debian_amd64.deb sdrpp-esp_ubuntu_noble_amd64.deb
+          run: mv sdrpp_debian_amd64.deb z2sdr_ubuntu_noble_amd64.deb
 
         - name: Save Deb Archive
           uses: actions/upload-artifact@v4
           with:
-              name: sdrpp-esp_ubuntu_noble_amd64
-              path: ${{runner.workspace}}/sdrpp-esp_ubuntu_noble_amd64.deb
+              name: z2sdr_ubuntu_noble_amd64
+              path: ${{runner.workspace}}/z2sdr_ubuntu_noble_amd64.deb
 
     release:
         if: startsWith(github.ref, 'refs/tags/esp-v')
