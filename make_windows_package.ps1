@@ -93,6 +93,8 @@ cp $build_dir/misc_modules/discord_integration/Release/discord_integration.dll s
 
 cp $build_dir/misc_modules/frequency_manager/Release/frequency_manager.dll sdrpp_windows_x64/modules/
 
+cp $build_dir/misc_modules/spectrum_export/Release/spectrum_export.dll sdrpp_windows_x64/modules/
+
 cp $build_dir/misc_modules/iq_exporter/Release/iq_exporter.dll sdrpp_windows_x64/modules/
 
 cp $build_dir/misc_modules/recorder/Release/recorder.dll sdrpp_windows_x64/modules/

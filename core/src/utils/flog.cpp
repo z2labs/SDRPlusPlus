@@ -29,6 +29,12 @@ namespace flog {
         std::lock_guard<std::mutex> lck(outMtx);
         androidFileFd = fd;
     }
+#else
+    static FILE* logFile = NULL;
+    void setLogFile(FILE* f) {
+        std::lock_guard<std::mutex> lck(outMtx);
+        logFile = f;
+    }
 #endif
 
     const char* TYPE_STR[_TYPE_COUNT] = {
@@ -158,6 +164,14 @@ namespace flog {
         // Write to output
         {
             std::lock_guard<std::mutex> lck(outMtx);
+#ifndef __ANDROID__
+            // Log file first: the Windows build has no console, the console output below returns early
+            if (logFile) {
+                int ms = (int)(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000);
+                fprintf(logFile, "[%02d:%02d:%02d.%03d] [%s] %s\n", nowc->tm_hour, nowc->tm_min, nowc->tm_sec, ms, TYPE_STR[type], out.c_str());
+                fflush(logFile);
+            }
+#endif
 #if defined(_WIN32)
             // Get output handle and return if invalid
             int wOutStream = (type == TYPE_ERROR) ? STD_ERROR_HANDLE  : STD_OUTPUT_HANDLE;

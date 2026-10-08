@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <stdint.h>
+#include <stdio.h>
 
 namespace flog {
     enum Type {
@@ -15,6 +16,9 @@ namespace flog {
 #ifdef __ANDROID__
     // Also append every line to this file descriptor (Android field log, see crashlog.cpp)
     void setAndroidFileFd(int fd);
+#else
+    // Desktop: also append every line to this file (root/sdrpp-log.txt, for bug reports)
+    void setLogFile(FILE* f);
 #endif
 
     // IO functions

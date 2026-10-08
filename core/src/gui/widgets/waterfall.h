@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <stdint.h>
 #include <mutex>
 #include <gui/widgets/bandplan.h>
 #include <imgui/imgui.h>
@@ -89,6 +90,9 @@ namespace ImGui {
         void draw();
         float* getFFTBuffer();
         void pushFFT();
+        // Latest full-span FFT line in dB, lowest frequency first (bin i at center + (i - N/2) * span / N),
+        // for measurement exporters. Returns its sequence number, 0 before the first FFT.
+        uint64_t copyLatestRawFFT(std::vector<float>& out);
 
         void updatePallette(float colors[][3], int colorCount);
         void updatePalletteFromArray(float* colors, int colorCount);
@@ -248,6 +252,9 @@ namespace ImGui {
 
         std::recursive_mutex buf_mtx;
         std::recursive_mutex latestFFTMtx;
+        std::mutex rawTapMtx;
+        std::vector<float> rawTap;
+        uint64_t rawTapSeq = 0;
         std::mutex texMtx;
         std::mutex smoothingBufMtx;
 

@@ -900,6 +900,12 @@ namespace ImGui {
         buf_mtx.unlock();
     }
 
+    uint64_t WaterFall::copyLatestRawFFT(std::vector<float>& out) {
+        std::lock_guard<std::mutex> tl(rawTapMtx);
+        out = rawTap;
+        return rawTapSeq;
+    }
+
     float* WaterFall::getFFTBuffer() {
         if (rawFFTs == NULL) { return NULL; }
         buf_mtx.lock();
@@ -921,7 +927,18 @@ namespace ImGui {
         // first frame, e.g. USB auto-start on a cold start): waterfallHeight is still 0 and
         // waterfallFb a 1-element placeholder, so the line scroll below would memmove a
         // negative (huge) size. Nothing to draw yet: drop this FFT.
-        if (waterfallVisible && (waterfallHeight < 1 || dataWidth < 1 || !waterfallFb)) { return; }
+        if (waterfallVisible && (waterfallHeight < 1 || dataWidth < 1 || !waterfallFb)) {
+            buf_mtx.unlock();   // taken by getFFTBuffer(): left locked, the UI thread would block on it
+            return;
+        }
+
+        // Measurement tap: a copy of this full-span line for exporters (copyLatestRawFFT)
+        {
+            const float* line = (waterfallVisible && waterfallHeight > 0) ? &rawFFTs[currentFFTLine * rawFFTSize] : rawFFTs;
+            std::lock_guard<std::mutex> tl(rawTapMtx);
+            rawTap.assign(line, line + rawFFTSize);
+            rawTapSeq++;
+        }
         double offsetRatio = viewOffset / (wholeBandwidth / 2.0);
         int drawDataSize = (viewBandwidth / wholeBandwidth) * rawFFTSize;
         int drawDataStart = (((double)rawFFTSize / 2.0) * (offsetRatio + 1)) - (drawDataSize / 2);

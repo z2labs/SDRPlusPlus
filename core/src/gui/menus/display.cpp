@@ -243,6 +243,22 @@ namespace displaymenu {
             core::configManager.release(true);
         }
 #endif
+#ifndef __ANDROID__
+        // Desktop counterpart of the Android USB auto-start
+        static bool playOnStart = true;
+        static bool playLoaded = false;
+        if (!playLoaded) {
+            core::configManager.acquire();
+            playOnStart = !core::configManager.conf.contains("playOnStart") || (bool)core::configManager.conf["playOnStart"];
+            core::configManager.release();
+            playLoaded = true;
+        }
+        if (ImGui::Checkbox("Start playback when SDR++ starts##sdrpp_play_on_start", &playOnStart)) {
+            core::configManager.acquire();
+            core::configManager.conf["playOnStart"] = playOnStart;
+            core::configManager.release(true);
+        }
+#endif
 
         ImGui::LeftLabel("FFT Framerate");
         ImGui::SetNextItemWidth(menuWidth - ImGui::GetCursorPosX());

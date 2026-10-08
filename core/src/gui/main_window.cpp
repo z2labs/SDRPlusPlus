@@ -9,6 +9,14 @@
 #include <gui/gui.h>
 #include "imgui.h"
 #include <stdio.h>
+#include <time.h>
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#endif
 #include <thread>
 #include <complex>
 #include <gui/widgets/waterfall.h>
@@ -230,6 +238,15 @@ void MainWindow::init() {
     }
 
     autostart = core::args["autostart"].b();
+#ifndef __ANDROID__
+    // z2labs: start receiving right away (Android starts on USB plug-in instead)
+    {
+        core::configManager.acquire();
+        bool pos = !core::configManager.conf.contains("playOnStart") || (bool)core::configManager.conf["playOnStart"];
+        core::configManager.release();
+        if (pos) { autostart = true; }
+    }
+#endif
     initComplete = true;
 
     core::moduleManager.doPostInitAll();
@@ -844,8 +861,92 @@ void MainWindow::drawMenu() {
                                   ", source: " + sourceName + (playing ? " (running)" : " (stopped)"));
     }
     ImGui::TextDisabled("Sends the log and settings, e.g. by mail, for a bug report");
+#else
+    ImGui::Spacing();
+    if (ImGui::Button("Export debug log##sdrpp_debug_export", ImVec2(-FLT_MIN, 0))) {
+        flog::info("Debug log export requested");
+        debugReportPath = exportDebugReport("SDR++ " VERSION_STR " / " SDRPP_ESP_VERSION " (" SDRPP_GIT_REV ", built " __DATE__ " " __TIME__ ")"
+                                            ", source: " + sourceName + (playing ? " (running)" : " (stopped)"));
+    }
+    if (!debugReportPath.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextDisabled("Saved: %s", debugReportPath.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    else {
+        ImGui::TextDisabled("Saves the log and settings to your Downloads folder, for a bug report");
+    }
 #endif
 }
+
+#ifndef __ANDROID__
+// Desktop bug report: build line, platform, the last three logs (root/sdrpp-log*.txt) and the
+// configuration in one text file in Downloads; the folder is then shown in the file manager.
+std::string MainWindow::exportDebugReport(const std::string& header) {
+    std::string root = (std::string)core::args["root"];
+    const char* home = getenv(
+#ifdef _WIN32
+        "USERPROFILE"
+#else
+        "HOME"
+#endif
+    );
+    std::string dir = home ? std::string(home) : root;
+    std::error_code ec;
+    if (home && std::filesystem::is_directory(dir + "/Downloads", ec)) { dir += "/Downloads"; }
+    time_t t = time(NULL);
+    char stamp[32];
+    strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&t));
+    std::string path = dir + "/sdrpp-esp-report-" + stamp + ".txt";
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) {
+        flog::error("Debug report: cannot write {}", path);
+        return "could not write " + path;
+    }
+    fprintf(f, "SDR++ ESP debug report %s\n%s\n", stamp, header.c_str());
+#if defined(_WIN32)
+    fprintf(f, "Platform: Windows\n");
+#elif defined(__APPLE__)
+    fprintf(f, "Platform: macOS\n");
+#else
+    fprintf(f, "Platform: Linux\n");
+#endif
+    fprintf(f, "Root: %s\n", root.c_str());
+    auto append = [f](const std::string& p, const char* title) {
+        FILE* in = fopen(p.c_str(), "rb");
+        if (!in) { return; }
+        fprintf(f, "\n===== %s =====\n", title);
+        // Keep the end of long logs (3 MB each)
+        fseek(in, 0, SEEK_END);
+        long len = ftell(in);
+        long start = len > 3 * 1024 * 1024 ? len - 3 * 1024 * 1024 : 0;
+        if (start) { fprintf(f, "[... %ld bytes left out ...]\n", start); }
+        fseek(in, start, SEEK_SET);
+        char buf[65536];
+        size_t n;
+        while ((n = fread(buf, 1, sizeof(buf), in)) > 0) { fwrite(buf, 1, n, f); }
+        fclose(in);
+    };
+    append(root + "/sdrpp-log.2.txt", "sdrpp-log.2.txt");
+    append(root + "/sdrpp-log.1.txt", "sdrpp-log.1.txt");
+    append(root + "/sdrpp-log.txt", "sdrpp-log.txt");
+    append(root + "/config.json", "config.json");
+    fclose(f);
+    flog::info("Debug report written to {}", path);
+#if defined(_WIN32)
+    std::string args = "/select,\"" + path + "\"";
+    for (auto& c : args) { if (c == '/' && &c != &args[0]) { c = '\\'; } }
+    ShellExecuteA(NULL, "open", "explorer.exe", args.c_str(), NULL, SW_SHOWNORMAL);
+#elif defined(__APPLE__)
+    std::string cmd = "open -R \"" + path + "\" &";
+    (void)!system(cmd.c_str());
+#else
+    std::string cmd = "xdg-open \"" + dir + "\" >/dev/null 2>&1 &";
+    (void)!system(cmd.c_str());
+#endif
+    return path;
+}
+#endif
 
 void MainWindow::handlePinchZoom(ImGui::WaterfallVFO* vfo) {
     if (!touch::pinch.active) {

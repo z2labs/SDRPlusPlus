@@ -107,6 +107,18 @@ int sdrpp_main(int argc, char* argv[]) {
         return -1;
     }
 
+#ifndef __ANDROID__
+    // Field log for bug reports (Settings > Export debug log): root/sdrpp-log.txt, last two kept
+    {
+        std::string base = root + "/sdrpp-log";
+        std::error_code ec;
+        std::filesystem::rename(base + ".1.txt", base + ".2.txt", ec);
+        std::filesystem::rename(base + ".txt", base + ".1.txt", ec);
+        FILE* lf = fopen((base + ".txt").c_str(), "w");
+        if (lf) { flog::setLogFile(lf); }
+    }
+#endif
+
     // ======== DEFAULT CONFIG ========
     json defConfig;
     defConfig["bandColors"]["amateur"] = "#FF0000FF";
@@ -229,6 +241,7 @@ int sdrpp_main(int argc, char* argv[]) {
 
     defConfig["moduleInstances"]["Frequency Manager"] = "frequency_manager";
     defConfig["moduleInstances"]["Recorder"] = "recorder";
+    defConfig["moduleInstances"]["Spectrum Export"] = "spectrum_export";
     defConfig["moduleInstances"]["Rigctl Server"] = "rigctl_server";
     // defConfig["moduleInstances"]["Rigctl Client"] = "rigctl_client";
     // TODO: Enable rigctl_client when ready
@@ -247,6 +260,7 @@ int sdrpp_main(int argc, char* argv[]) {
 #else
     defConfig["uiScale"] = 1.0f;
     defConfig["touchMode"] = false;
+    defConfig["playOnStart"] = true;   // z2labs: an instrument, start receiving right away
     defConfig["autoRange"] = false;
     defConfig["usbAutoStart"] = false;
 #endif
@@ -336,6 +350,7 @@ int sdrpp_main(int argc, char* argv[]) {
     core::configManager.conf["modules"][modCount++] = "recorder.so";
     core::configManager.conf["modules"][modCount++] = "rigctl_server.so";
     core::configManager.conf["modules"][modCount++] = "scanner.so";
+    core::configManager.conf["modules"][modCount++] = "spectrum_export.so";
 #endif
 
 #ifdef __ANDROID__
@@ -356,6 +371,9 @@ int sdrpp_main(int argc, char* argv[]) {
     // z2labs esp-sdr: existing configs predate the ESP-SDR source, give it an instance
     if (!core::configManager.conf["moduleInstances"].contains("ESP-SDR Source")) {
         core::configManager.conf["moduleInstances"]["ESP-SDR Source"] = defConfig["moduleInstances"]["ESP-SDR Source"];
+    }
+    if (!core::configManager.conf["moduleInstances"].contains("Spectrum Export")) {
+        core::configManager.conf["moduleInstances"]["Spectrum Export"] = defConfig["moduleInstances"]["Spectrum Export"];
     }
 
     // Remove unused elements

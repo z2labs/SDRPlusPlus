@@ -28,6 +28,11 @@ public:
     // Set by a source from a worker thread (e.g. its device did not answer): stop on the next frame
     std::atomic<bool> stopRequested{false};
     std::atomic<bool> startRequested{false};   // same, to start (e.g. after a firmware update)
+#ifndef __ANDROID__
+    // Desktop bug report (Settings > Export debug log): returns the file written
+    std::string exportDebugReport(const std::string& header);
+    std::string debugReportPath;
+#endif
     void setViewBandwidthSlider(float bandwidth);
     bool sdrIsRunning();
     void setFirstMenuRender();
