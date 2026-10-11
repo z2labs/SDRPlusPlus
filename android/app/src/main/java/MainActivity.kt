@@ -17,6 +17,14 @@ import android.view.KeyEvent;
 import android.view.inputmethod.InputMethodManager;
 import android.util.Log;
 import android.content.res.AssetManager;
+import android.hardware.GeomagneticField;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 
 import androidx.core.app.ActivityCompat;
 
@@ -232,6 +240,10 @@ class MainActivity : NativeActivity() {
 
     public override fun onPause() {
         flog("onPause");
+        try {
+            if (sensorOn) { (getSystemService(Context.SENSOR_SERVICE) as SensorManager).unregisterListener(rotListener); sensorOn = false; }
+            if (locOn) { (getSystemService(Context.LOCATION_SERVICE) as LocationManager).removeUpdates(locListener); locOn = false; }
+        } catch (e: Exception) {}
         super.onPause();
     }
 
@@ -244,6 +256,8 @@ class MainActivity : NativeActivity() {
 
     public override fun onResume() {
         flog("onResume");
+        applySensors();
+        applyLocation();
         // Hide bars again
         hideSystemBars();
         super.onResume();
@@ -388,6 +402,167 @@ class MainActivity : NativeActivity() {
             val text = String(b, Charsets.UTF_8);
             if (start > 0) "[... " + start + " bytes left out ...]\n" + text else text
         }
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // Cubesat Hunter (sat_tracker module): downloads, phone orientation and GPS
+
+    // Blocking HTTP(S) GET into a file; called from a native worker thread. "" = success.
+    public fun httpDownload(url: String, path: String): String {
+        var conn: java.net.HttpURLConnection? = null;
+        try {
+            var u = java.net.URL(url);
+            var redirects = 0;
+            while (true) {
+                conn = u.openConnection() as java.net.HttpURLConnection;
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(60000);
+                conn.setInstanceFollowRedirects(true);
+                conn.setRequestProperty("User-Agent", "Z2SDR-CubesatHunter");
+                val code = conn.getResponseCode();
+                if ((code == 301 || code == 302 || code == 303 || code == 307 || code == 308) && redirects < 5) {
+                    val loc = conn.getHeaderField("Location") ?: return "redirect without location";
+                    u = java.net.URL(u, loc);
+                    conn.disconnect();
+                    redirects++;
+                    continue;
+                }
+                if (code != 200) { return "HTTP " + code; }
+                break;
+            }
+            val f = File(path);
+            f.getParentFile()?.mkdirs();
+            conn!!.getInputStream().use { inp -> FileOutputStream(f).use { out -> inp.copyTo(out, 65536); } }
+            return "";
+        } catch (e: Exception) {
+            flog("httpDownload " + url + ": " + e);
+            return e.javaClass.getSimpleName() + ": " + (e.message ?: "");
+        } finally {
+            conn?.disconnect();
+        }
+    }
+
+    private var sensorWanted = false;
+    private var sensorOn = false;
+    @Volatile private var rotMat = FloatArray(9);
+    @Volatile private var rotValid = false;
+    @Volatile private var rotTime = 0L;
+
+    private val rotListener = object : SensorEventListener {
+        override fun onSensorChanged(ev: SensorEvent) {
+            val r = FloatArray(9);
+            SensorManager.getRotationMatrixFromVector(r, ev.values);
+            rotMat = r;
+            rotValid = true;
+            rotTime = android.os.SystemClock.elapsedRealtime();
+        }
+        override fun onAccuracyChanged(s: Sensor, acc: Int) {}
+    }
+
+    private fun applySensors() {
+        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager;
+        if (sensorWanted && !sensorOn) {
+            val s = sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR);
+            if (s != null) { sensorOn = sm.registerListener(rotListener, s, SensorManager.SENSOR_DELAY_GAME); }
+            else { flog("no rotation vector sensor"); }
+        }
+        else if (!sensorWanted && sensorOn) {
+            sm.unregisterListener(rotListener);
+            sensorOn = false;
+            rotValid = false;
+        }
+    }
+
+    public fun setSensors(on: Boolean) {
+        if (on == sensorWanted) { return; }
+        sensorWanted = on;
+        runOnUiThread { applySensors(); };
+    }
+
+    // [valid, R00..R22 (device -> world ENU, magnetic north), declination deg, display rotation 0..3]
+    public fun getPose(): FloatArray {
+        val out = FloatArray(12);
+        val fresh = rotValid && android.os.SystemClock.elapsedRealtime() - rotTime < 1000;
+        out[0] = if (fresh) 1f else 0f;
+        System.arraycopy(rotMat, 0, out, 1, 9);
+        val loc = lastLoc;
+        if (loc != null) {
+            out[10] = GeomagneticField(loc.getLatitude().toFloat(), loc.getLongitude().toFloat(),
+                                       loc.getAltitude().toFloat(), System.currentTimeMillis()).getDeclination();
+        } else {
+            out[10] = Float.NaN;
+        }
+        @Suppress("DEPRECATION")
+        out[11] = getWindowManager().getDefaultDisplay().getRotation().toFloat();
+        return out;
+    }
+
+    private var locWanted = false;
+    private var locOn = false;
+    @Volatile private var lastLoc: Location? = null;
+
+    private val locListener = object : LocationListener {
+        override fun onLocationChanged(l: Location) {
+            val prev = lastLoc;
+            if (prev == null || l.getAccuracy() <= prev.getAccuracy() || l.getTime() - prev.getTime() > 30000) { lastLoc = l; }
+        }
+        override fun onStatusChanged(p: String?, s: Int, b: Bundle?) {}
+        override fun onProviderEnabled(p: String) {}
+        override fun onProviderDisabled(p: String) {}
+    }
+
+    private fun hasLocationPermission(): Boolean {
+        return PermissionChecker.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+               PermissionChecker.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @android.annotation.SuppressLint("MissingPermission")
+    private fun applyLocation() {
+        val lm = getSystemService(Context.LOCATION_SERVICE) as LocationManager;
+        if (locWanted && !locOn) {
+            if (!hasLocationPermission()) {
+                ActivityCompat.requestPermissions(this, arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,
+                                                                Manifest.permission.ACCESS_COARSE_LOCATION), 7);
+                return;
+            }
+            for (p in arrayOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
+                try {
+                    if (!lm.isProviderEnabled(p)) { continue; }
+                    val last = lm.getLastKnownLocation(p);
+                    if (last != null && (lastLoc == null || last.getTime() > lastLoc!!.getTime())) { lastLoc = last; }
+                    lm.requestLocationUpdates(p, 2000L, 0f, locListener);
+                    locOn = true;
+                } catch (e: Exception) { flog("location " + p + ": " + e); }
+            }
+        }
+        else if (!locWanted && locOn) {
+            lm.removeUpdates(locListener);
+            locOn = false;
+        }
+    }
+
+    public fun setLocationUpdates(on: Boolean) {
+        if (on == locWanted && (locOn || !on)) { return; }
+        locWanted = on;
+        runOnUiThread { applyLocation(); };
+    }
+
+    public override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
+        super.onRequestPermissionsResult(code, perms, results);
+        if (code == 7 && locWanted) { applyLocation(); }
+    }
+
+    // [valid, lat, lon, alt m, accuracy m, age s]
+    public fun getLocation(): DoubleArray {
+        val out = DoubleArray(6);
+        val l = lastLoc ?: return out;
+        out[0] = 1.0;
+        out[1] = l.getLatitude();
+        out[2] = l.getLongitude();
+        out[3] = if (l.hasAltitude()) l.getAltitude() else 0.0;
+        out[4] = l.getAccuracy().toDouble();
+        out[5] = (System.currentTimeMillis() - l.getTime()) / 1000.0;
+        return out;
     }
 
     public fun getAppDir(): String {

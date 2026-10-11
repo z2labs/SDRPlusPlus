@@ -26,4 +26,17 @@ namespace backend {
     void setKeepScreenOn(bool on);
     // Collect the logs, settings and device details and open the Android share sheet
     void shareDebugReport(const std::string& header);
+
+    // Cubesat Hunter (sat_tracker module)
+    // Blocking HTTP(S) GET into a file (call from a worker thread). "" = success, else the error.
+    std::string httpDownload(const std::string& url, const std::string& path);
+    // Rotation-vector sensor on/off (released automatically while the app is in the background)
+    void setOrientationSensor(bool on);
+    // Device -> world (east, north, up) rotation, row-major, magnetic north. declination: degrees
+    // east (NaN when no location is known); displayRotation: 0..3 (Surface.ROTATION_*). false = no data.
+    bool getOrientation(float R[9], float& declination, int& displayRotation);
+    // GPS / network location updates on/off (asks for the permission the first time)
+    void setLocationUpdates(bool on);
+    // Last known position. false = none yet.
+    bool getLocation(double& lat, double& lon, double& altM, double& accuracyM, double& ageS);
 }

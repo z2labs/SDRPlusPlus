@@ -374,6 +374,93 @@ namespace backend {
         java_vm->DetachCurrentThread();
     }
 
+    // JNI helper: env for the calling thread, detached again only if it was attached here
+    struct JniScope {
+        JavaVM* vm = NULL;
+        JNIEnv* env = NULL;
+        bool attached = false;
+        JniScope() {
+            vm = app->activity->vm;
+            jint r = vm->GetEnv((void**)&env, JNI_VERSION_1_6);
+            if (r == JNI_EDETACHED) {
+                if (vm->AttachCurrentThread(&env, NULL) != JNI_OK) { env = NULL; return; }
+                attached = true;
+            }
+            else if (r != JNI_OK) { env = NULL; }
+        }
+        ~JniScope() {
+            if (env && env->ExceptionCheck()) { env->ExceptionClear(); }
+            if (attached) { vm->DetachCurrentThread(); }
+        }
+        jmethodID method(const char* name, const char* sig) {
+            if (!env) { return NULL; }
+            jclass clazz = env->GetObjectClass(app->activity->clazz);
+            jmethodID mid = clazz ? env->GetMethodID(clazz, name, sig) : NULL;
+            if (clazz) { env->DeleteLocalRef(clazz); }
+            if (!mid && env->ExceptionCheck()) { env->ExceptionClear(); }
+            return mid;
+        }
+    };
+
+    std::string httpDownload(const std::string& url, const std::string& path) {
+        JniScope j;
+        jmethodID mid = j.method("httpDownload", "(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;");
+        if (!mid) { return "no JNI"; }
+        jstring ju = j.env->NewStringUTF(url.c_str());
+        jstring jp = j.env->NewStringUTF(path.c_str());
+        jstring jr = (jstring)j.env->CallObjectMethod(app->activity->clazz, mid, ju, jp);
+        std::string res = "Java exception";
+        if (!j.env->ExceptionCheck() && jr) {
+            const char* c = j.env->GetStringUTFChars(jr, NULL);
+            res = c ? c : "";
+            j.env->ReleaseStringUTFChars(jr, c);
+        }
+        if (jr) { j.env->DeleteLocalRef(jr); }
+        j.env->DeleteLocalRef(ju);
+        j.env->DeleteLocalRef(jp);
+        return res;
+    }
+
+    void setOrientationSensor(bool on) {
+        JniScope j;
+        jmethodID mid = j.method("setSensors", "(Z)V");
+        if (mid) { j.env->CallVoidMethod(app->activity->clazz, mid, (jboolean)on); }
+    }
+
+    bool getOrientation(float R[9], float& declination, int& displayRotation) {
+        JniScope j;
+        jmethodID mid = j.method("getPose", "()[F");
+        if (!mid) { return false; }
+        jfloatArray a = (jfloatArray)j.env->CallObjectMethod(app->activity->clazz, mid);
+        if (j.env->ExceptionCheck() || !a) { return false; }
+        float v[12] = { 0 };
+        if (j.env->GetArrayLength(a) >= 12) { j.env->GetFloatArrayRegion(a, 0, 12, v); }
+        j.env->DeleteLocalRef(a);
+        for (int i = 0; i < 9; i++) { R[i] = v[1 + i]; }
+        declination = v[10];
+        displayRotation = (int)v[11];
+        return v[0] > 0.5f;
+    }
+
+    void setLocationUpdates(bool on) {
+        JniScope j;
+        jmethodID mid = j.method("setLocationUpdates", "(Z)V");
+        if (mid) { j.env->CallVoidMethod(app->activity->clazz, mid, (jboolean)on); }
+    }
+
+    bool getLocation(double& lat, double& lon, double& altM, double& accuracyM, double& ageS) {
+        JniScope j;
+        jmethodID mid = j.method("getLocation", "()[D");
+        if (!mid) { return false; }
+        jdoubleArray a = (jdoubleArray)j.env->CallObjectMethod(app->activity->clazz, mid);
+        if (j.env->ExceptionCheck() || !a) { return false; }
+        double v[6] = { 0 };
+        if (j.env->GetArrayLength(a) >= 6) { j.env->GetDoubleArrayRegion(a, 0, 6, v); }
+        j.env->DeleteLocalRef(a);
+        lat = v[1]; lon = v[2]; altM = v[3]; accuracyM = v[4]; ageS = v[5];
+        return v[0] > 0.5;
+    }
+
     int getUartBridgeHint() {
         JavaVM* java_vm = app->activity->vm;
         JNIEnv* java_env = NULL;

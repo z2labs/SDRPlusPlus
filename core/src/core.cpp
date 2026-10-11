@@ -242,6 +242,7 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["moduleInstances"]["Frequency Manager"] = "frequency_manager";
     defConfig["moduleInstances"]["Recorder"] = "recorder";
     defConfig["moduleInstances"]["Spectrum Export"] = "spectrum_export";
+    defConfig["moduleInstances"]["Cubesat Hunter"] = "sat_tracker";
     defConfig["moduleInstances"]["Rigctl Server"] = "rigctl_server";
     // defConfig["moduleInstances"]["Rigctl Client"] = "rigctl_client";
     // TODO: Enable rigctl_client when ready
@@ -351,6 +352,7 @@ int sdrpp_main(int argc, char* argv[]) {
     core::configManager.conf["modules"][modCount++] = "rigctl_server.so";
     core::configManager.conf["modules"][modCount++] = "scanner.so";
     core::configManager.conf["modules"][modCount++] = "spectrum_export.so";
+    core::configManager.conf["modules"][modCount++] = "sat_tracker.so";
 #endif
 
 #ifdef __ANDROID__
@@ -374,6 +376,9 @@ int sdrpp_main(int argc, char* argv[]) {
     }
     if (!core::configManager.conf["moduleInstances"].contains("Spectrum Export")) {
         core::configManager.conf["moduleInstances"]["Spectrum Export"] = defConfig["moduleInstances"]["Spectrum Export"];
+    }
+    if (!core::configManager.conf["moduleInstances"].contains("Cubesat Hunter")) {
+        core::configManager.conf["moduleInstances"]["Cubesat Hunter"] = defConfig["moduleInstances"]["Cubesat Hunter"];
     }
 
     // Remove unused elements
