@@ -256,6 +256,8 @@ private:
         if (c.contains("stepHz")) { stepHz = c["stepHz"]; }
         if (c.contains("radar")) { radarOn = c["radar"]; }
         if (c.contains("radarLarge")) { radarLarge = c["radarLarge"]; }
+        if (c.contains("radarX")) { radarOffX = c["radarX"]; }
+        if (c.contains("radarY")) { radarOffY = c["radarY"]; }
         if (c.contains("compass")) { compassOn = c["compass"]; }
         if (c.contains("followGps")) { followGps = c["followGps"]; }
         if (c.contains("selNorad")) { selNorad = c["selNorad"]; }
@@ -293,6 +295,8 @@ private:
         c["stepHz"] = stepHz;
         c["radar"] = radarOn;
         c["radarLarge"] = radarLarge;
+        c["radarX"] = radarOffX;
+        c["radarY"] = radarOffY;
         c["compass"] = compassOn;
         c["followGps"] = followGps;
         c["selNorad"] = selNorad;
@@ -757,10 +761,24 @@ private:
         float size = radarLarge ? std::min(vh * 0.78f, vw * 0.55f) : std::min(vh * 0.42f, vw * 0.32f);
         size = std::max(size, 120.0f * s);
         float boxH = size + 2 * textH + 4 * s;
-        // Top left of the spectrum (the right edge carries the touch rail and zoom sliders)
-        ImVec2 tl(args.min.x + pad, args.min.y + pad);
+        // Never taller than the screen below the spectrum's top edge
+        float maxBox = vh - args.min.y - 2 * pad;
+        if (boxH > maxBox) {
+            size = std::max(80.0f * s, maxBox - 2 * textH - 4 * s);
+            boxH = size + 2 * textH + 4 * s;
+        }
+        // Default: top left of the spectrum (the right edge carries the touch rail and zoom
+        // sliders); dragged anywhere on screen, the position is kept
+        ImVec2 tl(args.min.x + pad + radarOffX, args.min.y + pad + radarOffY);
+        tl.x = std::clamp(tl.x, vp->Pos.x, vp->Pos.x + vw - size);
+        tl.y = std::clamp(tl.y, vp->Pos.y, std::max(vp->Pos.y, vp->Pos.y + vh - boxH));
+        radarOffX = tl.x - (args.min.x + pad);
+        radarOffY = tl.y - (args.min.y + pad);
         ImVec2 boxMax(tl.x + size, tl.y + boxH);
         radarRect = ImRect(tl, boxMax);
+        // Compass toggle in the top right corner of the radar (Android)
+        float cb = 30.0f * s;
+        ImRect compassBtn(ImVec2(boxMax.x - cb - 4 * s, tl.y + 4 * s), ImVec2(boxMax.x - 4 * s, tl.y + 4 * s + cb));
 
         ImGui::SetNextWindowPos(tl);
         ImGui::SetNextWindowSize(ImVec2(size, boxH));
@@ -771,9 +789,33 @@ private:
                                  ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse);
         ImGui::PopStyleVar(2);
         if (!open) { ImGui::End(); return; }
-        if (ImGui::InvisibleButton("##radar_tap", ImVec2(size, boxH))) {
-            radarLarge = !radarLarge;
-            saveConfig();
+        // One button for the whole box: drag moves it, a tap toggles the size (or the compass
+        // when on the compass icon)
+        ImGui::InvisibleButton("##radar_tap", ImVec2(size, boxH));
+        if (ImGui::IsItemActive()) {
+            ImVec2 d = ImGui::GetMouseDragDelta(ImGuiMouseButton_Left, 0.0f);
+            if (!radarDragging && (std::fabs(d.x) > 8 * s || std::fabs(d.y) > 8 * s)) { radarDragging = true; }
+            if (radarDragging) {
+                ImVec2 md = ImGui::GetIO().MouseDelta;
+                radarOffX += md.x;
+                radarOffY += md.y;
+            }
+        }
+        if (ImGui::IsItemDeactivated()) {
+            if (radarDragging) { saveConfig(); }
+#ifdef __ANDROID__
+            else if (compassBtn.Contains(ImGui::GetIO().MousePos)) {
+                compassOn = !compassOn;
+                backend::setOrientationSensor(compassOn);
+                headInit = false;
+                saveConfig();
+            }
+#endif
+            else {
+                radarLarge = !radarLarge;
+                saveConfig();
+            }
+            radarDragging = false;
         }
         ImDrawList* dl = ImGui::GetWindowDrawList();
         dl->PushClipRect(tl, boxMax, true);
@@ -920,11 +962,23 @@ private:
         dl->AddText(ImVec2(tl.x + 6 * s, ty), txt, line1);
         dl->AddText(ImVec2(tl.x + 6 * s, ty + textH), onTarget ? IM_COL32(80, 255, 120, 255) : txt, line2);
 #ifdef __ANDROID__
-        if (compassOn && !ps.valid) {
-            dl->AddText(ImVec2(tl.x + 6 * s, tl.y + size - textH - 2 * s), IM_COL32(255, 190, 60, 255), "no compass data");
-        }
-        else if (compassOn) {
-            dl->AddText(ImVec2(tl.x + 6 * s, tl.y + size - textH - 2 * s), IM_COL32(120, 200, 255, 255), ps.flat ? "compass: flat" : "compass: aim");
+        {
+            // Compass icon: needle in a circle; green = turning with the phone, orange = on but no
+            // sensor data yet, grey = off (tap to switch)
+            ImVec2 cc = compassBtn.GetCenter();
+            float cr = compassBtn.GetWidth() * 0.5f;
+            ImU32 col = !compassOn ? IM_COL32(140, 140, 140, 220) : ps.valid ? IM_COL32(90, 230, 120, 255) : IM_COL32(255, 180, 60, 255);
+            dl->AddCircleFilled(cc, cr, IM_COL32(20, 26, 34, 230));
+            dl->AddCircle(cc, cr, col, 24, 1.5f * s);
+            float na = (float)((ps.valid ? -ps.heading : 0.0) * DEG);
+            ImVec2 nd(std::sin(na), -std::cos(na));
+            ImVec2 tip(cc.x + nd.x * cr * 0.75f, cc.y + nd.y * cr * 0.75f), tail(cc.x - nd.x * cr * 0.75f, cc.y - nd.y * cr * 0.75f);
+            ImVec2 side(-nd.y * cr * 0.25f, nd.x * cr * 0.25f);
+            dl->AddTriangleFilled(tip, ImVec2(cc.x + side.x, cc.y + side.y), ImVec2(cc.x - side.x, cc.y - side.y), IM_COL32(240, 90, 80, 255));
+            dl->AddTriangleFilled(tail, ImVec2(cc.x + side.x, cc.y + side.y), ImVec2(cc.x - side.x, cc.y - side.y), col);
+            const char* st = !compassOn ? "compass off" : !ps.valid ? "no compass data" : ps.flat ? "flat: turns with phone" : "aim the back of the phone";
+            ImVec2 sz = ImGui::CalcTextSize(st);
+            dl->AddText(ImVec2(compassBtn.Min.x + compassBtn.GetWidth() - sz.x, compassBtn.Max.y + 2 * s), col, st);
         }
 #endif
         dl->PopClipRect();
@@ -1462,6 +1516,8 @@ private:
     bool radarOn = true, radarLarge = false, compassOn = false, followGps = false;
 #endif
     ImRect radarRect;
+    float radarOffX = 0, radarOffY = 0;   // dragged position relative to the default corner
+    bool radarDragging = false;
     struct Other { std::string name; double az, el; };
     std::vector<Other> others;
     double lastOthers = 0;
