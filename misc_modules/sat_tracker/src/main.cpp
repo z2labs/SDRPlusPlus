@@ -235,7 +235,8 @@ private:
 
     struct Track {
         int norad = 0;
-        double t0 = 0, t1 = 0;
+        double t0 = 0, t1 = 0, step = 10.0;   // pts[i] is at t0 + i * step (last one at t1)
+        double tmax = 0;
         std::vector<std::pair<float, float>> pts;
     };
 
@@ -473,7 +474,8 @@ private:
                 tr->norad = sel;
                 tr->t0 = p.aos;
                 tr->t1 = p.always ? p.aos + 3600.0 : p.los;
-                tr->pts = satpass::track(*ss, obs, tr->t0, tr->t1, 10.0);
+                tr->tmax = p.tmax;
+                tr->pts = satpass::track(*ss, obs, tr->t0, tr->t1, tr->step);
             }
             std::lock_guard<std::mutex> lck(rowsMtx);
             selSat = ss;
@@ -801,13 +803,71 @@ private:
             std::lock_guard<std::mutex> lck(rowsMtx);
             tr = track;
         }
+        double tnow = simNow();
         if (tr && tr->norad == l.sat->norad && tr->pts.size() > 1) {
-            std::vector<ImVec2> poly;
-            for (auto& p : tr->pts) { if (p.second >= 0) { poly.push_back(pt(p.first, p.second)); } }
-            if (poly.size() > 1) {
-                dl->AddPolyline(poly.data(), (int)poly.size(), IM_COL32(80, 170, 255, 220), 0, 2.0f * s);
-                dl->AddCircleFilled(poly.front(), 3.5f * s, IM_COL32(80, 220, 120, 255));
-                dl->AddCircleFilled(poly.back(), 3.5f * s, IM_COL32(240, 90, 80, 255));
+            // Look4Sat style: the whole pass, the part already flown dimmed, a tick every minute,
+            // AOS / max / LOS times at the ends and the top
+            int n = (int)tr->pts.size();
+            auto tOf = [&](int i) { return std::min(tr->t1, tr->t0 + i * tr->step); };
+            for (int i = 0; i + 1 < n; i++) {
+                if (tr->pts[i].second < 0 && tr->pts[i + 1].second < 0) { continue; }
+                bool flown = tOf(i + 1) <= tnow;
+                dl->AddLine(pt(tr->pts[i].first, tr->pts[i].second), pt(tr->pts[i + 1].first, tr->pts[i + 1].second),
+                            flown ? IM_COL32(80, 120, 170, 140) : IM_COL32(80, 170, 255, 235), (flown ? 2.0f : 3.0f) * s);
+            }
+            int perMin = std::max(1, (int)std::lround(60.0 / tr->step));
+            for (int i = perMin; i < n - 1; i += perMin) {
+                if (tr->pts[i].second < 0) { continue; }
+                dl->AddCircleFilled(pt(tr->pts[i].first, tr->pts[i].second), 2.2f * s, IM_COL32(200, 225, 255, 200));
+            }
+            ImVec2 a = pt(tr->pts.front().first, tr->pts.front().second), b = pt(tr->pts.back().first, tr->pts.back().second);
+            dl->AddCircleFilled(a, 4.0f * s, IM_COL32(80, 220, 120, 255));
+            dl->AddCircleFilled(b, 4.0f * s, IM_COL32(240, 90, 80, 255));
+            auto label = [&](ImVec2 p, double t, ImU32 col) {
+                std::string tx = fmtClock(t);
+                ImVec2 ts = ImGui::CalcTextSize(tx.c_str());
+                ImVec2 q(std::clamp(p.x - ts.x * 0.5f, tl.x + 2 * s, tl.x + size - ts.x - 2 * s),
+                         std::clamp(p.y + 5 * s, tl.y + 2 * s, tl.y + size - ts.y - 2 * s));
+                dl->AddText(q, col, tx.c_str());
+            };
+            label(a, tr->t0, IM_COL32(120, 230, 150, 255));
+            if (tr->t1 - tr->t0 < 6 * 3600.0) { label(b, tr->t1, IM_COL32(250, 140, 130, 255)); }
+            if (tr->tmax > tr->t0 && tr->tmax < tr->t1) {
+                int im = std::clamp((int)((tr->tmax - tr->t0) / tr->step), 0, n - 1);
+                ImVec2 m = pt(tr->pts[im].first, tr->pts[im].second);
+                char mx[24];
+                snprintf(mx, sizeof(mx), "%.0f deg", l.pass.maxEl);
+                dl->AddText(ImVec2(m.x + 6 * s, m.y - ImGui::GetTextLineHeight() * 0.5f), IM_COL32(170, 200, 230, 220), mx);
+            }
+        }
+
+        // Other satellites overhead now (from the pass list): small dots with short names
+        {
+            std::shared_ptr<std::vector<Row>> rws;
+            satpass::Station st;
+            {
+                std::lock_guard<std::mutex> lck(rowsMtx);
+                rws = rows;
+            }
+            {
+                std::lock_guard<std::mutex> lck(paramMtx);
+                st = station;
+            }
+            if (rws && tnow - lastOthers > 1.0) {
+                lastOthers = tnow;
+                others.clear();
+                libsgp4::Observer obs(st.lat, st.lon, st.altM / 1000.0);
+                for (auto& r : *rws) {
+                    if (others.size() >= 12) { break; }
+                    if (r.sat->norad == l.sat->norad || r.pass.aos > tnow || (r.pass.los < tnow && !r.pass.always)) { continue; }
+                    satpass::Look lk = satpass::look(*r.sat, obs, tnow);
+                    if (lk.ok && lk.el > 0) { others.push_back({ r.sat->name.substr(0, 8), lk.az, lk.el }); }
+                }
+            }
+            for (auto& o : others) {
+                ImVec2 op = pt(o.az, o.el);
+                dl->AddCircleFilled(op, 3.0f * s, IM_COL32(170, 180, 190, 200));
+                dl->AddText(ImVec2(op.x + 4 * s, op.y - ImGui::GetTextLineHeight() * 0.5f), IM_COL32(150, 160, 170, 180), o.name.c_str());
             }
         }
 
@@ -1402,6 +1462,9 @@ private:
     bool radarOn = true, radarLarge = false, compassOn = false, followGps = false;
 #endif
     ImRect radarRect;
+    struct Other { std::string name; double az, el; };
+    std::vector<Other> others;
+    double lastOthers = 0;
     bool headInit = false;
     double smX = 0, smY = 1;
     double declApprox = 5.5;
