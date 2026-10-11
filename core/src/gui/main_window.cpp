@@ -1228,6 +1228,22 @@ void MainWindow::pollUsbSdr() {
 
     int vid = 0, pid = 0;
     int fd = backend::getDeviceFD(vid, pid, {});
+
+    // No SDR a few seconds after start-up (USB permission dialogs have had their chance):
+    // run the simulated RTL-SDR, so the app is usable for demos and lessons without hardware.
+    // Plugging an SDR in later switches to it through the auto-start below.
+    if (firstUsbPoll == 0) { firstUsbPoll = now; }
+    if (!demoChecked && now - firstUsbPoll > 3.0) {
+        demoChecked = true;
+        core::configManager.acquire();
+        bool demo = !core::configManager.conf.contains("demoWhenNoDevice") || (bool)core::configManager.conf["demoWhenNoDevice"];
+        core::configManager.release();
+        if (fd < 0 && demo && !playing && sourcemenu::selectSourceByName("Demo (RTL-SDR)")) {
+            flog::info("No SDR plugged in: starting the demo source");
+            setPlayState(true);
+        }
+    }
+
     if (fd < 0) {
         // Unplugged (or not yet permitted): the next fd is a new device even if Android
         // happens to reuse the same descriptor number.

@@ -64,6 +64,8 @@ private:
     double lastUsbPoll = 0.0;
     int lastUsbFd = -1;
     int usbPollFrames = 0;
+    double firstUsbPoll = 0;
+    bool demoChecked = false;
     int lastUartHint = 0;
 #endif
     std::string usbNotice;   // shown as a dismissable card (wrong USB port...)

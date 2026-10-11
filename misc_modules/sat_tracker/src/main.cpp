@@ -24,6 +24,7 @@
 #include <filesystem>
 #include "satdb.h"
 #include "passes.h"
+#include "sat_tracker_interface.h"
 #include <json.hpp>
 #include <fstream>
 #ifdef __ANDROID__
@@ -52,6 +53,10 @@ static constexpr double DEG = 3.14159265358979323846 / 180.0;
 static double nowUnix() {
     return std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
 }
+
+// Classroom demo: the whole module can run on a shifted clock so the next pass starts now
+static std::atomic<double> g_timeShift{ 0.0 };
+static double simNow() { return nowUnix() + g_timeShift.load(); }
 
 static double wrap180(double a) {
     a = std::fmod(a + 180.0, 360.0);
@@ -180,6 +185,7 @@ public:
         gui::menu.registerEntry(name, menuHandler, this, NULL);
         gui::waterfall.onFFTRedraw.bindHandler(&fftRedrawHandler);
         gui::waterfall.onInputProcess.bindHandler(&inputHandler);
+        core::modComManager.registerInterface("sat_tracker", SAT_TRACKER_IFACE_NAME, ifaceHandler, this);
 
         worker = std::thread(&SatTrackerModule::run, this);
     }
@@ -192,6 +198,8 @@ public:
         wCv.notify_all();
         if (worker.joinable()) { worker.join(); }
         if (locThread.joinable()) { locThread.join(); }
+        core::modComManager.unregisterInterface(SAT_TRACKER_IFACE_NAME);
+        g_timeShift = 0;
         gui::menu.removeEntry(name);
         gui::waterfall.onFFTRedraw.unbindHandler(&fftRedrawHandler);
         gui::waterfall.onInputProcess.unbindHandler(&inputHandler);
@@ -323,7 +331,7 @@ private:
                 wCv.wait_for(lck, std::chrono::seconds(5), [&] { return quit || wantDownload || wantRecalc; });
                 if (quit) { return; }
                 dl = wantDownload;
-                calc = wantRecalc || nowUnix() - lastCalc > 60.0;
+                calc = wantRecalc || simNow() - lastCalc > 60.0;
                 wantDownload = false;
                 wantRecalc = false;
             }
@@ -338,7 +346,7 @@ private:
             }
             if (calc) {
                 recalc();
-                lastCalc = nowUnix();
+                lastCalc = simNow();
             }
         }
     }
@@ -354,7 +362,7 @@ private:
             minE = minEl;
         }
         libsgp4::Observer obs(st.lat, st.lon, st.altM / 1000.0);
-        double now = nowUnix();
+        double now = simNow();
         auto sats = db.sats;   // the worker owns db; the UI only reads rows
         std::vector<Row> out;
         for (auto& s : sats) {
@@ -445,7 +453,7 @@ private:
         l.sat = s;
         for (auto& t : s->tx) { if (t.uuid == selTx) { l.tx = &t; break; } }
         libsgp4::Observer obs(st.lat, st.lon, st.altM / 1000.0);
-        double now = nowUnix();
+        double now = simNow();
         l.look = satpass::look(*s, obs, now);
         if (!l.look.ok) { return l; }
         l.valid = true;
@@ -493,8 +501,66 @@ private:
     }
 
     // Called every frame from the FFT redraw: Doppler tuning
+    static void ifaceHandler(int code, void* in, void* out, void* ctx) {
+        SatTrackerModule* _this = (SatTrackerModule*)ctx;
+        if (code == SAT_TRACKER_IFACE_CMD_GET_SIGNAL && out) {
+            std::lock_guard<std::mutex> lck(_this->sigMtx);
+            *(SatTrackerSignal*)out = _this->sig;
+        }
+    }
+
+    // What the selected satellite sends right now, as received here (for the demo source)
+    void publishSignal() {
+        double now = simNow();
+        if (now - lastPublish < 0.1) { return; }
+        lastPublish = now;
+        SatTrackerSignal sg;
+        Live l = live();
+        if (enabled && l.valid && l.tx) {
+            sg.active = true;
+            sg.freq = satpass::doppler(l.tx->centre(), l.look.rangeRateKms);
+            sg.width = l.tx->isLinear() ? (l.tx->downHigh - l.tx->downLow) : 0;
+            sg.baud = l.tx->baud;
+            sg.elevation = l.look.el;
+            sg.rangeKm = l.look.rangeKm;
+            std::string m = l.tx->mode;
+            std::transform(m.begin(), m.end(), m.begin(), ::toupper);
+            if (l.tx->isLinear() || m == "USB" || m == "LSB" || m == "SSB") { sg.kind = SAT_SIGNAL_LINEAR; }
+            else if (m == "CW") { sg.kind = SAT_SIGNAL_CW; }
+            else if (m == "FM" || m == "FMN") { sg.kind = SAT_SIGNAL_FM; }
+            else { sg.kind = SAT_SIGNAL_DATA; }
+        }
+        std::lock_guard<std::mutex> lck(sigMtx);
+        sig = sg;
+    }
+
+    // Simulated pass: shift the clock so the selected satellite rises in a few seconds
+    void simulatePass() {
+        Live l = live();
+        if (!l.sat || !l.pass.valid || l.pass.always) { return; }
+        double now = simNow();
+        if (l.look.el > 0) { return; }
+        g_timeShift = g_timeShift.load() + (l.pass.aos - 10.0 - now);
+        simLos = l.pass.los;
+        lastCmd = 0;
+        lastPublish = 0;
+        lastTick = 0;
+        request(false);
+    }
+
+    void realTime() {
+        g_timeShift = 0;
+        simLos = 0;
+        lastCmd = 0;
+        lastPublish = 0;
+        lastTick = 0;
+        request(false);
+    }
+
     void tick() {
-        double now = nowUnix();
+        double now = simNow();
+        if (simLos > 0 && now > simLos + 30.0) { realTime(); now = simNow(); }
+        publishSignal();
         if (!enabled || !tracking) { return; }
         if (now - lastTick < 0.2) { return; }
         lastTick = now;
@@ -507,9 +573,17 @@ private:
         if (lastCmd != 0 && std::fabs(cur - lastCmd) > 1.0) {
             double factor = l.fTx > 0 ? l.fRx / l.fTx : 1.0;
             userOffset += (cur - lastCmd) / factor;
+            flog::info("Cubesat Hunter: manual retune {:.0f} Hz (cur {:.0f}, last {:.0f}), offset {:.0f} Hz", cur - lastCmd, cur, lastCmd, userOffset);
             l = live();
         }
         if (lastCmd == 0 || std::fabs(l.fRx - lastCmd) >= stepHz) {
+            // A jump to another band: centre the receiver a little below the signal (away from the
+            // DC spike) so the VFO is on screen; small Doppler steps move the VFO only
+            double bw = gui::waterfall.getBandwidth(), vbw = gui::waterfall.getViewBandwidth();
+            if (std::fabs(l.fRx - cur) > bw * 0.25) {
+                double off = std::min(0.2 * bw, 0.25 * vbw);
+                tuner::centerTuning(gui::waterfall.selectedVFO, l.fRx - off);
+            }
             tuner::tune(tuner::TUNER_MODE_NORMAL, gui::waterfall.selectedVFO, l.fRx);
             lastCmd = currentTune();
             if (std::fabs(lastCmd - l.fRx) > 1.0) { lastCmd = l.fRx; }
@@ -678,7 +752,7 @@ private:
         }
 
         // Text: name and status
-        double now = nowUnix();
+        double now = simNow();
         char line1[96], line2[96];
         snprintf(line1, sizeof(line1), "%s", l.sat->name.c_str());
         if (ps.valid && !ps.flat && up) {
@@ -696,6 +770,9 @@ private:
         }
         else {
             snprintf(line2, sizeof(line2), "no pass in 24 h");
+        }
+        if (g_timeShift.load() != 0) {
+            dl->AddText(ImVec2(tl.x + 6 * s, tl.y + 4 * s), IM_COL32(255, 190, 60, 255), "SIMULATED");
         }
         float ty = tl.y + size;
         ImGui::PushClipRect(tl, boxMax, true);
@@ -778,7 +855,7 @@ private:
     void pollGps() {
 #ifdef __ANDROID__
         if (!followGps) { return; }
-        double now = nowUnix();
+        double now = simNow();
         if (now - lastGpsPoll < 1.0) { return; }
         lastGpsPoll = now;
         double lat, lon, alt, acc, age;
@@ -817,7 +894,7 @@ private:
 
     void menu() {
         float menuWidth = ImGui::GetContentRegionAvail().x;
-        double now = nowUnix();
+        double now = simNow();
         std::string id = "##sat_" + name;
 
         // Data
@@ -1047,6 +1124,17 @@ private:
             }
         }
 
+        if (g_timeShift.load() != 0) {
+            ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(255, 190, 60, 255));
+            ImGui::Text("Simulated time (%+.1f h)", g_timeShift.load() / 3600.0);
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            if (ImGui::SmallButton(("Real time" + id).c_str())) { realTime(); }
+        }
+        else if (l.valid && l.look.el <= 0 && l.pass.valid && !l.pass.always) {
+            if (ImGui::Button(("Simulate this pass now" + id).c_str())) { simulatePass(); }
+            if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Classroom demo: the clock jumps to just before AOS.\nWith the Demo source the satellite's signal appears with its real Doppler."); }
+        }
         if (l.tx) {
             bool t = tracking;
             if (ImGui::Checkbox(("Doppler tracking" + id).c_str(), &t)) {
@@ -1161,6 +1249,12 @@ private:
     std::string gpsStatus;
 
     int updateDays = 3;
+
+    // Demo: published signal and simulated pass
+    std::mutex sigMtx;
+    SatTrackerSignal sig;
+    double lastPublish = 0;
+    double simLos = 0;
 
     // Desktop location
     std::thread locThread;

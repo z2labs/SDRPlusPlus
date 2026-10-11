@@ -243,6 +243,9 @@ int sdrpp_main(int argc, char* argv[]) {
     defConfig["moduleInstances"]["Recorder"] = "recorder";
     defConfig["moduleInstances"]["Spectrum Export"] = "spectrum_export";
     defConfig["moduleInstances"]["Cubesat Hunter"] = "sat_tracker";
+    defConfig["moduleInstances"]["Demo Source"]["module"] = "demo_source";
+    defConfig["moduleInstances"]["Demo Source"]["enabled"] = true;
+    defConfig["demoWhenNoDevice"] = true;   // no SDR plugged in at start-up: run the simulated RTL-SDR
     defConfig["moduleInstances"]["Rigctl Server"] = "rigctl_server";
     // defConfig["moduleInstances"]["Rigctl Client"] = "rigctl_client";
     // TODO: Enable rigctl_client when ready
@@ -329,6 +332,7 @@ int sdrpp_main(int argc, char* argv[]) {
 
     core::configManager.conf["modules"][modCount++] = "airspy_source.so";
     core::configManager.conf["modules"][modCount++] = "airspyhf_source.so";
+    core::configManager.conf["modules"][modCount++] = "demo_source.so";
     core::configManager.conf["modules"][modCount++] = "esp_sdr_source.so";
     core::configManager.conf["modules"][modCount++] = "hackrf_source.so";
     core::configManager.conf["modules"][modCount++] = "hermes_source.so";
@@ -376,6 +380,9 @@ int sdrpp_main(int argc, char* argv[]) {
     }
     if (!core::configManager.conf["moduleInstances"].contains("Spectrum Export")) {
         core::configManager.conf["moduleInstances"]["Spectrum Export"] = defConfig["moduleInstances"]["Spectrum Export"];
+    }
+    if (!core::configManager.conf["moduleInstances"].contains("Demo Source")) {
+        core::configManager.conf["moduleInstances"]["Demo Source"] = defConfig["moduleInstances"]["Demo Source"];
     }
     if (!core::configManager.conf["moduleInstances"].contains("Cubesat Hunter")) {
         core::configManager.conf["moduleInstances"]["Cubesat Hunter"] = defConfig["moduleInstances"]["Cubesat Hunter"];

@@ -95,6 +95,7 @@ cp $build_dir/misc_modules/frequency_manager/Release/frequency_manager.dll sdrpp
 
 cp $build_dir/misc_modules/spectrum_export/Release/spectrum_export.dll sdrpp_windows_x64/modules/
 cp $build_dir/misc_modules/sat_tracker/Release/sat_tracker.dll sdrpp_windows_x64/modules/
+cp $build_dir/source_modules/demo_source/Release/demo_source.dll sdrpp_windows_x64/modules/
 
 cp $build_dir/misc_modules/iq_exporter/Release/iq_exporter.dll sdrpp_windows_x64/modules/
 

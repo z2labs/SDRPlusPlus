@@ -4,6 +4,7 @@
 #include <gui/gui.h>
 #include <signal_path/signal_path.h>
 #include <core.h>
+#include <gui/menus/source.h>
 #include <gui/style.h>
 #include <config.h>
 #include <gui/smgui.h>
@@ -101,7 +102,30 @@ public:
         sigpath::sourceManager.unregisterSource("RTL-SDR");
     }
 
-    void postInit() {}
+    void postInit() {
+#ifndef __ANDROID__
+        // z2labs: start in the demo source when the RTL-SDR is selected but none is plugged in,
+        // and come back to the RTL-SDR on a later start once one is there
+        if (serverMode) { return; }
+        core::configManager.acquire();
+        std::string src = core::configManager.conf.contains("source") ? core::configManager.conf["source"].get<std::string>() : "";
+        bool demo = !core::configManager.conf.contains("demoWhenNoDevice") || (bool)core::configManager.conf["demoWhenNoDevice"];
+        bool fellBack = core::configManager.conf.contains("demoFallbackFrom") && core::configManager.conf["demoFallbackFrom"] == "RTL-SDR";
+        core::configManager.release();
+        if (src == "RTL-SDR" && devCount == 0 && demo && sourcemenu::selectSourceByName("Demo (RTL-SDR)")) {
+            flog::info("RTL-SDR: no device, starting in the demo source");
+            core::configManager.acquire();
+            core::configManager.conf["demoFallbackFrom"] = "RTL-SDR";
+            core::configManager.release(true);
+        }
+        else if (src == "Demo (RTL-SDR)" && fellBack && devCount > 0 && sourcemenu::selectSourceByName("RTL-SDR")) {
+            flog::info("RTL-SDR: device found again, leaving the demo source");
+            core::configManager.acquire();
+            core::configManager.conf.erase("demoFallbackFrom");
+            core::configManager.release(true);
+        }
+#endif
+    }
 
     void enable() {
         enabled = true;

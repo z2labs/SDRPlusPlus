@@ -33,3 +33,10 @@ Accuracy: Doppler and look angles match Skyfield to 1e-3 deg / 1e-5 km/s; AOS / 
 ## Third-party code
 `src/sgp4/`: libsgp4 by Daniel Warner (https://github.com/dnwrnr/sgp4, commit c6ebb90),
 Apache License 2.0, see `src/sgp4/LICENSE`. `CsvTleLoader` left out.
+
+## Classroom demo
+**Simulate this pass now** shifts the module's clock to just before the next AOS of the selected
+satellite (radar shows SIMULATED; back to real time automatically after LOS or with **Real time**).
+With the **Demo (RTL-SDR)** source the satellite's downlink is synthesised at its real Doppler
+frequency (FM voice-like tones, CW, AFSK/FSK bursts or SSB/CW users on a linear transponder),
+stronger at high elevation, so Doppler tracking can be shown without an antenna.
