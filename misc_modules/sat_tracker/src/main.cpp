@@ -1,3 +1,4 @@
+#include <cctype>
 // Cubesat Hunter: satellite list (SatNOGS DB transmitters + TLEs), pass prediction, automatic
 // tuning with Doppler correction and a floating radar on the spectrum that, on a phone, turns with
 // the compass and guides the antenna to the satellite (Look4Sat style).
