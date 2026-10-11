@@ -52,12 +52,15 @@ namespace satdb {
         std::shared_ptr<libsgp4::Tle> tle;
         std::shared_ptr<libsgp4::SGP4> sgp4;
         std::vector<Transmitter> tx;
+        bool hungarian = false;   // SatNOGS "countries" contains HU
+        bool alive = true;        // SatNOGS satellite status (alive / dead / re-entered / future)
     };
 
     struct Filter {
         bool bands[_BAND_COUNT] = { false, true, true, false, true, true, false };
         bool amateurOnly = true;
         bool activeOnly = true;
+        bool favoritesOnly = false;
         std::string search;     // name / NORAD / mode substring, case-insensitive
     };
 
@@ -82,6 +85,7 @@ namespace satdb {
         double ageHours() const;
 
         std::vector<std::shared_ptr<Satellite>> sats;   // only satellites with a usable TLE
+        std::string stats;                              // what the last load found, for the UI
 
     private:
         std::string dir;

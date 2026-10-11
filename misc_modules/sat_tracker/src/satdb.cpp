@@ -151,7 +151,11 @@ namespace satdb {
                 if (firstErr.empty()) { firstErr = std::string(it.what) + ": " + err; }
                 if (it.required) { return firstErr; }
             }
-            else if (it.file == F_TLE || it.file == F_CELESTRAK) { tleOk++; }
+            else {
+                std::error_code ec2;
+                flog::info("Cubesat Hunter: {} downloaded, {} bytes", it.what, (int64_t)std::filesystem::file_size(dir + "/" + it.file, ec2));
+                if (it.file == F_TLE || it.file == F_CELESTRAK) { tleOk++; }
+            }
         }
         if (tleOk == 0) { return firstErr.empty() ? "no orbit data" : firstErr; }
         return "";
@@ -251,6 +255,7 @@ namespace satdb {
 
         std::map<int, std::string> names;
         std::map<int, std::string> satStatus;
+        std::map<int, bool> hungarian;
         if (readFile(dir + "/" + F_SATS, text)) {
             try {
                 json j = json::parse(text);
@@ -261,6 +266,14 @@ namespace satdb {
                         std::string n = str(o, "name");
                         if (!n.empty()) { names[norad] = n; }
                         satStatus[norad] = str(o, "status");
+                        // "countries" is a comma separated list of ISO codes, e.g. "HU" or "HU,SK"
+                        std::string c = str(o, "countries");
+                        for (size_t p = 0; p < c.size();) {
+                            size_t q = c.find(',', p);
+                            if (q == std::string::npos) { q = c.size(); }
+                            if (trim(c.substr(p, q - p)) == "HU") { hungarian[norad] = true; }
+                            p = q + 1;
+                        }
                     }
                 }
             }
@@ -311,6 +324,9 @@ namespace satdb {
             s->line1 = tl->second.l1;
             s->line2 = tl->second.l2;
             s->epochDays = epochs[norad];
+            s->hungarian = hungarian.count(norad) > 0;
+            auto st = satStatus.find(norad);
+            s->alive = st == satStatus.end() || st->second.empty() || st->second == "alive";
             try {
                 s->tle = std::make_shared<libsgp4::Tle>(s->name, s->line1, s->line2);
                 s->sgp4 = std::make_shared<libsgp4::SGP4>(*s->tle);
@@ -322,7 +338,11 @@ namespace satdb {
         }
         std::sort(out.begin(), out.end(), [](auto& a, auto& b) { return a->name < b->name; });
         sats = out;
-        flog::info("Cubesat Hunter: {} satellites with orbit + downlink ({} TLEs)", (int)sats.size(), (int)tles.size());
+        size_t ntx = 0;
+        for (auto& [n, l] : txs) { ntx += l.size(); }
+        flog::info("Cubesat Hunter: {} satellites with orbit + downlink ({} TLEs, {} transmitters on {} satellites, {} names, {} HU)",
+                   (int)sats.size(), (int)tles.size(), (int)ntx, (int)txs.size(), (int)names.size(), (int)hungarian.size());
+        stats = std::to_string(sats.size()) + " satellites (" + std::to_string(tles.size()) + " orbits, " + std::to_string(ntx) + " downlinks)";
         return (int)sats.size();
     }
 }

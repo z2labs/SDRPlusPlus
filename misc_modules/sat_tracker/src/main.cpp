@@ -22,6 +22,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#include <set>
 #include <filesystem>
 #include "satdb.h"
 #include "passes.h"
@@ -227,6 +228,7 @@ private:
         satpass::Pass pass;
         std::string bands;      // e.g. "70 cm, S-band 2.2G"
         std::string modes;      // e.g. "FM, CW"
+        bool fav = false;
     };
 
     struct Track {
@@ -256,6 +258,10 @@ private:
         if (c.contains("selNorad")) { selNorad = c["selNorad"]; }
         if (c.contains("selTx")) { selTx = c["selTx"]; }
         if (c.contains("updateDays")) { updateDays = c["updateDays"]; }
+        if (c.contains("favorites") && c["favorites"].is_array()) {
+            for (auto& v : c["favorites"]) { if (v.is_number_integer()) { favorites.insert(v.get<int>()); } }
+        }
+        if (c.contains("favoritesOnly")) { filter.favoritesOnly = c["favoritesOnly"]; }
         config.release();
         minEl = std::clamp(minEl, 0.0f, 60.0f);
         stepHz = std::clamp(stepHz, 1, 1000);
@@ -289,6 +295,12 @@ private:
         c["selNorad"] = selNorad;
         c["selTx"] = selTx;
         c["updateDays"] = updateDays;
+        c["favoritesOnly"] = filter.favoritesOnly;
+        c["favorites"] = json::array();
+        {
+            std::lock_guard<std::mutex> lck(paramMtx);
+            for (int n : favorites) { c["favorites"].push_back(n); }
+        }
         config.release(true);
     }
 
@@ -309,6 +321,11 @@ private:
         _this->setStatus(std::string("Downloading ") + what + "...");
     }
 
+    void setDbStats(const std::string& s) {
+        std::lock_guard<std::mutex> lck(statusMtx);
+        dbStats = s;
+    }
+
     void setStatus(const std::string& s) {
         std::lock_guard<std::mutex> lck(statusMtx);
         status = s;
@@ -320,6 +337,7 @@ private:
             std::string err;
             int n = db.load(err);
             setStatus(n ? "" : err);
+            setDbStats(db.stats);
             double age = db.ageHours();
             if (age < 0 || (updateDays > 0 && age > updateDays * 24.0)) { wantDownload = true; }
             wantRecalc = true;
@@ -341,6 +359,7 @@ private:
                 std::string err = db.download(progressCb, this);
                 std::string lerr;
                 int n = db.load(lerr);
+                setDbStats(db.stats);
                 setStatus(!err.empty() ? ("Update failed: " + err + (n ? " (using the old data)" : "")) : (n ? "" : lerr));
                 busy = false;
                 calc = true;
@@ -352,27 +371,53 @@ private:
         }
     }
 
+    // Sort key: favourites, then Hungarian satellites, then the rest; in each group the ones
+    // overhead now first, then by AOS
+    static bool rowLess(const Row& a, const Row& b, double now) {
+        int ga = a.fav ? 0 : a.sat->hungarian ? 1 : 2, gb = b.fav ? 0 : b.sat->hungarian ? 1 : 2;
+        if (ga != gb) { return ga < gb; }
+        bool va = a.pass.aos <= now, vb = b.pass.aos <= now;
+        if (va != vb) { return va; }
+        return a.pass.aos < b.pass.aos;
+    }
+
+    void publishRows(std::vector<Row> out, double now, const satpass::Station& st) {
+        std::sort(out.begin(), out.end(), [now](const Row& a, const Row& b) { return rowLess(a, b, now); });
+        std::lock_guard<std::mutex> lck(rowsMtx);
+        rows = std::make_shared<std::vector<Row>>(std::move(out));
+        rowsStation = st;
+    }
+
     void recalc() {
         satdb::Filter f;
         satpass::Station st;
         float minE;
+        std::set<int> favs;
         {
             std::lock_guard<std::mutex> lck(paramMtx);
             f = filter;
             st = station;
             minE = minEl;
+            favs = favorites;
         }
         libsgp4::Observer obs(st.lat, st.lon, st.altM / 1000.0);
         double now = simNow();
+        auto t0 = std::chrono::steady_clock::now();
         auto sats = db.sats;   // the worker owns db; the UI only reads rows
-        std::vector<Row> out;
+
+        // Candidates: a downlink passing the filter; favourites and Hungarian satellites always
+        // (Hungarian ones only while alive when "Active only" is set)
+        std::vector<Row> cand;
         for (auto& s : sats) {
-            if (quit || wantDownload) { return; }
             Row r;
+            r.sat = s;
+            r.fav = favs.count(s->norad) > 0;
             bool any = false;
             bool bandSeen[satdb::_BAND_COUNT] = { false };
             for (auto& t : s->tx) {
-                if (!satdb::txMatches(t, f)) { continue; }
+                bool match = satdb::txMatches(t, f);
+                bool special = r.fav || (s->hungarian && (!f.activeOnly || (s->alive && t.alive && t.status == "active")));
+                if (!match && !special) { continue; }
                 any = true;
                 if (!bandSeen[t.band()]) {
                     bandSeen[t.band()] = true;
@@ -382,23 +427,38 @@ private:
                     r.modes += (r.modes.empty() ? "" : ", ") + t.mode;
                 }
             }
+            if (!any && r.fav) { any = true; }
             if (!any) { continue; }
-            r.sat = s;
-            r.pass = satpass::nextPass(*s, obs, now, 24.0, minE);
+            if (f.favoritesOnly && !r.fav) { continue; }
+            cand.push_back(r);
+        }
+        // Favourites and Hungarian satellites first, so they appear at once on a slow phone
+        std::stable_sort(cand.begin(), cand.end(), [](const Row& a, const Row& b) {
+            return (a.fav ? 0 : a.sat->hungarian ? 1 : 2) < (b.fav ? 0 : b.sat->hungarian ? 1 : 2);
+        });
+        calcTotal = (int)cand.size();
+        calcDone = 0;
+        std::vector<Row> out;
+        auto lastPub = std::chrono::steady_clock::now();
+        for (auto& r : cand) {
+            if (quit) { return; }
+            calcDone++;
+            if (!satpass::look(*r.sat, obs, now).ok) { continue; }   // decayed / bad elements
+            r.pass = satpass::nextPass(*r.sat, obs, now, 24.0, (r.fav || r.sat->hungarian) ? 0.0 : minE);
             if (!r.pass.valid) { continue; }
             out.push_back(r);
+            // Show what is ready every half second while the rest is computed
+            if (std::chrono::steady_clock::now() - lastPub > std::chrono::milliseconds(500)) {
+                publishRows(out, now, st);
+                lastPub = std::chrono::steady_clock::now();
+            }
         }
-        // Visible now first (highest first), then by AOS
-        std::sort(out.begin(), out.end(), [now](const Row& a, const Row& b) {
-            bool va = a.pass.aos <= now, vb = b.pass.aos <= now;
-            if (va != vb) { return va; }
-            return a.pass.aos < b.pass.aos;
-        });
-        {
-            std::lock_guard<std::mutex> lck(rowsMtx);
-            rows = std::make_shared<std::vector<Row>>(std::move(out));
-            rowsStation = st;
-        }
+        publishRows(out, now, st);
+        calcTotal = 0;
+        int ms = (int)std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+        flog::info("Cubesat Hunter: {} of {} satellites match the filter, {} with a pass in 24 h ({} ms)",
+                   (int)cand.size(), (int)sats.size(), (int)out.size(), ms);
+
         // Radar track for the selected satellite
         int sel = selNorad;
         std::shared_ptr<satdb::Satellite> ss;
@@ -917,7 +977,12 @@ private:
         }
         {
             std::lock_guard<std::mutex> lck(statusMtx);
+            if (!dbStats.empty()) { ImGui::TextDisabled("%s", dbStats.c_str()); }
             if (!status.empty()) { ImGui::TextWrapped("%s", status.c_str()); }
+        }
+        if (calcTotal > 0) {
+            ImGui::ProgressBar((float)calcDone / (float)std::max(1, (int)calcTotal), ImVec2(-1, 0),
+                               ("Computing passes " + std::to_string((int)calcDone) + " / " + std::to_string((int)calcTotal)).c_str());
         }
 
         // Station
@@ -1016,6 +1081,7 @@ private:
             fChanged |= ImGui::Checkbox(("Amateur only" + id).c_str(), &f.amateurOnly);
             ImGui::SameLine();
             fChanged |= ImGui::Checkbox(("Active only" + id).c_str(), &f.activeOnly);
+            fChanged |= ImGui::Checkbox(("Favourites only" + id).c_str(), &f.favoritesOnly);
             ImGui::LeftLabel("Min. max elevation");
             ImGui::FillWidth();
             if (ImGui::SliderFloat(("##minel" + id).c_str(), &me, 0.0f, 60.0f, "%.0f deg")) { fChanged = true; }
@@ -1046,7 +1112,8 @@ private:
             r = rows;
         }
         float tableH = std::max(120.0f * style::uiScale, ImGui::GetTextLineHeightWithSpacing() * 9.5f);
-        if (ImGui::BeginTable(("sat_table" + id).c_str(), 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, tableH))) {
+        if (ImGui::BeginTable(("sat_table" + id).c_str(), 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, tableH))) {
+            ImGui::TableSetupColumn("##fav", ImGuiTableColumnFlags_WidthFixed, ImGui::GetTextLineHeight() * 1.3f);
             ImGui::TableSetupColumn("Satellite");
             ImGui::TableSetupColumn("Pass", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("in 00:00 ").x);
             ImGui::TableSetupColumn("Max", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("90 ").x);
@@ -1058,26 +1125,33 @@ private:
                     if (row.pass.los < now && !row.pass.always) { continue; }   // over, the next recalc refreshes it
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
+                    bool fav = isFavorite(row.sat->norad);
+                    if (starButton(("##star" + std::to_string(row.sat->norad)).c_str(), fav)) { setFavorite(row.sat->norad, !fav); }
+                    ImGui::TableSetColumnIndex(1);
                     bool visible = row.pass.aos <= now;
                     bool sel = row.sat->norad == selNorad;
                     if (visible) { ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(110, 230, 130, 255)); }
-                    if (ImGui::Selectable((row.sat->name + "##" + std::to_string(row.sat->norad)).c_str(), sel, ImGuiSelectableFlags_SpanAllColumns)) {
+                    std::string label = row.sat->name + (row.sat->hungarian ? "  [HU]" : "");
+                    if (ImGui::Selectable((label + "##" + std::to_string(row.sat->norad)).c_str(), sel)) {
                         select(row.sat);
                     }
                     if (ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("NORAD %d\n%s\n%s", row.sat->norad, row.bands.c_str(), row.modes.c_str());
                     }
-                    ImGui::TableSetColumnIndex(1);
+                    ImGui::TableSetColumnIndex(2);
                     if (row.pass.always) { ImGui::TextUnformatted("always"); }
                     else if (visible) { ImGui::Text("up %s", fmtDuration(row.pass.los - now).c_str()); }
                     else if (row.pass.aos - now < 3600.0) { ImGui::Text("in %s", fmtDuration(row.pass.aos - now).c_str()); }
                     else { ImGui::TextUnformatted(fmtClock(row.pass.aos).c_str()); }
-                    ImGui::TableSetColumnIndex(2);
+                    ImGui::TableSetColumnIndex(3);
                     ImGui::Text("%.0f", row.pass.maxEl);
                     if (visible) { ImGui::PopStyleColor(); }
                 }
             }
             ImGui::EndTable();
+        }
+        if (r && r->empty() && calcTotal == 0 && db.ageHours() >= 0) {
+            ImGui::TextWrapped("No pass in the next 24 h for this filter. Try more bands, untick \"Active only\" or lower the minimum elevation.");
         }
 
         // Selected satellite
@@ -1087,7 +1161,12 @@ private:
             return;
         }
         ImGui::Separator();
-        ImGui::Text("%s  (NORAD %d)", l.sat->name.c_str(), l.sat->norad);
+        {
+            bool fav = isFavorite(l.sat->norad);
+            if (starButton("##selstar", fav)) { setFavorite(l.sat->norad, !fav); }
+            ImGui::SameLine();
+            ImGui::Text("%s  (NORAD %d)%s", l.sat->name.c_str(), l.sat->norad, l.sat->hungarian ? "  Hungarian" : "");
+        }
 
         // Transmitter list (only those passing the filter, plus the selected one)
         satdb::Filter f;
@@ -1175,6 +1254,44 @@ private:
 #endif
     }
 
+    bool isFavorite(int norad) {
+        std::lock_guard<std::mutex> lck(paramMtx);
+        return favorites.count(norad) > 0;
+    }
+
+    void setFavorite(int norad, bool on) {
+        {
+            std::lock_guard<std::mutex> lck(paramMtx);
+            if (on) { favorites.insert(norad); } else { favorites.erase(norad); }
+        }
+        saveConfig();
+        request(false);   // re-sort the list
+    }
+
+    // Tap target with a drawn star (the UI font has no star glyph)
+    static bool starButton(const char* id, bool on) {
+        float h = ImGui::GetTextLineHeight();
+        ImVec2 p = ImGui::GetCursorScreenPos();
+        bool clicked = ImGui::InvisibleButton(id, ImVec2(h * 1.2f, h));
+        bool hov = ImGui::IsItemHovered();
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        ImVec2 c(p.x + h * 0.6f, p.y + h * 0.5f);
+        float ro = h * 0.48f, ri = ro * 0.42f;
+        ImVec2 pts[10];
+        for (int i = 0; i < 10; i++) {
+            float a = (float)(i * 3.14159265358979323846 / 5.0 - 3.14159265358979323846 / 2.0);
+            float r = (i & 1) ? ri : ro;
+            pts[i] = ImVec2(c.x + r * std::cos(a), c.y + r * std::sin(a));
+        }
+        if (on) {
+            for (int i = 0; i < 10; i++) { dl->AddTriangleFilled(c, pts[i], pts[(i + 1) % 10], IM_COL32(255, 205, 50, 255)); }
+        }
+        else {
+            dl->AddPolyline(pts, 10, hov ? IM_COL32(220, 220, 220, 255) : IM_COL32(140, 140, 140, 255), ImDrawFlags_Closed, 1.2f);
+        }
+        return clicked;
+    }
+
     static std::string txLabel(const satdb::Transmitter& t) {
         std::string s = fmtFreq(t.centre()) + " " + (t.mode.empty() ? "?" : t.mode);
         if (t.isLinear()) { s += " (" + fmtFreq(t.downLow) + "-" + fmtFreq(t.downHigh) + ")"; }
@@ -1218,6 +1335,7 @@ private:
     satpass::Station station;
     satdb::Filter filter;
     float minEl = 5.0f;
+    std::set<int> favorites;
     char searchBuf[64] = { 0 };
     bool filterDirty = false;
 
@@ -1270,6 +1388,8 @@ private:
     std::condition_variable wCv;
     bool quit = false, wantDownload = false, wantRecalc = false;
     std::atomic<bool> busy{ false };
+    std::atomic<int> calcDone{ 0 }, calcTotal{ 0 };
+    std::string dbStats;
     std::mutex statusMtx;
     std::string status;
 
