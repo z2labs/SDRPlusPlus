@@ -229,6 +229,8 @@ private:
         std::string bands;      // e.g. "70 cm, S-band 2.2G"
         std::string modes;      // e.g. "FM, CW"
         bool fav = false;
+        double freq = 0;        // first downlink passing the filter
+        std::string mode;
     };
 
     struct Track {
@@ -419,6 +421,7 @@ private:
                 bool special = r.fav || (s->hungarian && (!f.activeOnly || (s->alive && t.alive && t.status == "active")));
                 if (!match && !special) { continue; }
                 any = true;
+                if (r.freq == 0) { r.freq = t.centre(); r.mode = t.mode; }
                 if (!bandSeen[t.band()]) {
                     bandSeen[t.band()] = true;
                     r.bands += (r.bands.empty() ? "" : ", ") + std::string(satdb::BAND_NAMES[t.band()]);
@@ -444,7 +447,7 @@ private:
             if (quit) { return; }
             calcDone++;
             if (!satpass::look(*r.sat, obs, now).ok) { continue; }   // decayed / bad elements
-            r.pass = satpass::nextPass(*r.sat, obs, now, 24.0, (r.fav || r.sat->hungarian) ? 0.0 : minE);
+            r.pass = satpass::nextPass(*r.sat, obs, now, 24.0, r.fav ? 0.0 : minE);
             if (!r.pass.valid) { continue; }
             out.push_back(r);
             // Show what is ready every half second while the rest is computed
@@ -721,7 +724,10 @@ private:
         SatTrackerModule* _this = (SatTrackerModule*)ctx;
         _this->tick();
         _this->pollGps();
-        if (!_this->enabled || !_this->radarOn || _this->selNorad == 0) { _this->radarRect = ImRect(); return; }
+        if (!_this->enabled || !_this->radarOn || _this->selNorad == 0 || gui::mainWindow.menuCoversSpectrum()) {
+            _this->radarRect = ImRect();
+            return;
+        }
         _this->drawRadar(args);
     }
 
@@ -730,13 +736,11 @@ private:
         if (_this->radarRect.GetWidth() <= 0) { return; }
         ImVec2 m = ImGui::GetMousePos();
         if (!_this->radarRect.Contains(m)) { return; }
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            _this->radarLarge = !_this->radarLarge;
-            _this->saveConfig();
-        }
-        gui::waterfall.inputHandled = true;   // no tuning or panning under the radar
+        gui::waterfall.inputHandled = true;   // no tuning or panning under the radar (it has its own tap)
     }
 
+    // The radar is its own small window over the spectrum and the waterfall (the waterfall is
+    // drawn after the FFT, so drawing into the FFT would hide most of it), sized from the screen
     void drawRadar(const ImGui::WaterFall::FFTRedrawArgs& args) {
         Live l = live();
         if (!l.sat) { radarRect = ImRect(); return; }
@@ -746,16 +750,33 @@ private:
         float s = style::uiScale;
         float textH = ImGui::GetTextLineHeight();
         float pad = 6 * s;
-        float h = args.max.y - args.min.y - 2 * textH - 4 * s - 2 * pad, w = args.max.x - args.min.x;
-        float size = radarLarge ? std::min(h, w * 0.6f) : std::min(h * 0.75f, 170.0f * s);
-        size = std::max(size, 80.0f * s);
-        ImVec2 tl(args.max.x - size - pad, args.min.y + pad);
-        ImVec2 boxMax(tl.x + size, tl.y + size + 2 * textH + 4 * s);
+        ImGuiViewport* vp = ImGui::GetMainViewport();
+        float vh = vp->Size.y, vw = vp->Size.x;
+        float size = radarLarge ? std::min(vh * 0.78f, vw * 0.55f) : std::min(vh * 0.42f, vw * 0.32f);
+        size = std::max(size, 120.0f * s);
+        float boxH = size + 2 * textH + 4 * s;
+        // Top left of the spectrum (the right edge carries the touch rail and zoom sliders)
+        ImVec2 tl(args.min.x + pad, args.min.y + pad);
+        ImVec2 boxMax(tl.x + size, tl.y + boxH);
         radarRect = ImRect(tl, boxMax);
-        ImDrawList* dl = args.window->DrawList;
-        dl->PushClipRect(args.min, args.max, true);
 
-        dl->AddRectFilled(tl, boxMax, IM_COL32(10, 14, 20, 200), 8 * s);
+        ImGui::SetNextWindowPos(tl);
+        ImGui::SetNextWindowSize(ImVec2(size, boxH));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        bool open = ImGui::Begin(("##sat_radar_" + name).c_str(), NULL,
+                                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing |
+                                 ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::PopStyleVar(2);
+        if (!open) { ImGui::End(); return; }
+        if (ImGui::InvisibleButton("##radar_tap", ImVec2(size, boxH))) {
+            radarLarge = !radarLarge;
+            saveConfig();
+        }
+        ImDrawList* dl = ImGui::GetWindowDrawList();
+        dl->PushClipRect(tl, boxMax, true);
+
+        dl->AddRectFilled(tl, boxMax, IM_COL32(10, 14, 20, 215), 8 * s);
         ImVec2 c(tl.x + size * 0.5f, tl.y + size * 0.5f);
         float R = size * 0.5f - 12 * s;
         ImU32 grid = IM_COL32(90, 140, 120, 160), txt = IM_COL32(200, 230, 210, 255);
@@ -836,11 +857,18 @@ private:
             dl->AddText(ImVec2(tl.x + 6 * s, tl.y + 4 * s), IM_COL32(255, 190, 60, 255), "SIMULATED");
         }
         float ty = tl.y + size;
-        ImGui::PushClipRect(tl, boxMax, true);
         dl->AddText(ImVec2(tl.x + 6 * s, ty), txt, line1);
         dl->AddText(ImVec2(tl.x + 6 * s, ty + textH), onTarget ? IM_COL32(80, 255, 120, 255) : txt, line2);
-        ImGui::PopClipRect();
+#ifdef __ANDROID__
+        if (compassOn && !ps.valid) {
+            dl->AddText(ImVec2(tl.x + 6 * s, tl.y + size - textH - 2 * s), IM_COL32(255, 190, 60, 255), "no compass data");
+        }
+        else if (compassOn) {
+            dl->AddText(ImVec2(tl.x + 6 * s, tl.y + size - textH - 2 * s), IM_COL32(120, 200, 255, 255), ps.flat ? "compass: flat" : "compass: aim");
+        }
+#endif
         dl->PopClipRect();
+        ImGui::End();
     }
 
 
@@ -1112,12 +1140,15 @@ private:
             r = rows;
         }
         float tableH = std::max(120.0f * style::uiScale, ImGui::GetTextLineHeightWithSpacing() * 9.5f);
-        if (ImGui::BeginTable(("sat_table" + id).c_str(), 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY, ImVec2(0, tableH))) {
+        if (ImGui::BeginTable(("sat_table" + id).c_str(), 7, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_ScrollX, ImVec2(0, tableH))) {
             ImGui::TableSetupColumn("##fav", ImGuiTableColumnFlags_WidthFixed, ImGui::GetTextLineHeight() * 1.3f);
-            ImGui::TableSetupColumn("Satellite");
+            ImGui::TableSetupColumn("Satellite", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("XXXXXXXXXXXX [HU]").x);
             ImGui::TableSetupColumn("Pass", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("in 00:00 ").x);
             ImGui::TableSetupColumn("Max", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("90 ").x);
-            ImGui::TableSetupScrollFreeze(1, 1);
+            ImGui::TableSetupColumn("MHz", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("2250.0000 ").x);
+            ImGui::TableSetupColumn("Mode", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("GMSK, BPSK ").x);
+            ImGui::TableSetupColumn("AOS -> LOS az", ImGuiTableColumnFlags_WidthFixed, ImGui::CalcTextSize("AOS -> LOS az ").x);
+            ImGui::TableSetupScrollFreeze(2, 1);
             ImGui::TableHeadersRow();
             if (r) {
                 for (auto& row : *r) {
@@ -1145,6 +1176,12 @@ private:
                     else { ImGui::TextUnformatted(fmtClock(row.pass.aos).c_str()); }
                     ImGui::TableSetColumnIndex(3);
                     ImGui::Text("%.0f", row.pass.maxEl);
+                    ImGui::TableSetColumnIndex(4);
+                    if (row.freq > 0) { ImGui::TextUnformatted(fmtFreq(row.freq).c_str()); }
+                    ImGui::TableSetColumnIndex(5);
+                    ImGui::TextUnformatted(row.modes.c_str());
+                    ImGui::TableSetColumnIndex(6);
+                    if (!row.pass.always) { ImGui::Text("%.0f -> %.0f", row.pass.aosAz, row.pass.losAz); }
                     if (visible) { ImGui::PopStyleColor(); }
                 }
             }
@@ -1359,7 +1396,11 @@ private:
     double lastTick = 0;
 
     // Radar / sensors
+#ifdef __ANDROID__
+    bool radarOn = true, radarLarge = false, compassOn = true, followGps = true;
+#else
     bool radarOn = true, radarLarge = false, compassOn = false, followGps = false;
+#endif
     ImRect radarRect;
     bool headInit = false;
     double smX = 0, smY = 1;

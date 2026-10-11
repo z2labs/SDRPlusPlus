@@ -28,6 +28,8 @@ public:
     // Set by a source from a worker thread (e.g. its device did not answer): stop on the next frame
     std::atomic<bool> stopRequested{false};
     std::atomic<bool> startRequested{false};   // same, to start (e.g. after a firmware update)
+    // The touch drawer or the desktop overlay menu is over the spectrum: floating overlays hide
+    bool menuCoversSpectrum() const { return drawerT > 0.01f || menuOverlayOpen; }
 #ifndef __ANDROID__
     // Desktop bug report (Settings > Export debug log): returns the file written
     std::string exportDebugReport(const std::string& header);

@@ -206,6 +206,12 @@ namespace satdb {
 
     struct TleSet { std::string name, l1, l2; };
 
+    // SatNOGS satellite status: "in orbit" (older data: "alive"), "re-entered", "future", "dead"
+    static bool satAlive(const std::string& s) {
+        std::string l = lower(s);
+        return !(l == "re-entered" || l == "dead" || l == "decayed" || l == "future");
+    }
+
     static void addTle(std::map<int, TleSet>& m, std::map<int, double>& epochs, const std::string& name,
                        const std::string& l1, const std::string& l2) {
         try {
@@ -305,7 +311,7 @@ namespace satdb {
                     t.alive = o.contains("alive") && o["alive"].is_boolean() && o["alive"].get<bool>();
                     t.invert = o.contains("invert") && o["invert"].is_boolean() && o["invert"].get<bool>();
                     auto st = satStatus.find(t.norad);
-                    if (st != satStatus.end() && !st->second.empty() && st->second != "alive") { t.alive = false; }
+                    if (st != satStatus.end() && !satAlive(st->second)) { t.alive = false; }
                     txs[t.norad].push_back(t);
                 }
             }
@@ -326,7 +332,7 @@ namespace satdb {
             s->epochDays = epochs[norad];
             s->hungarian = hungarian.count(norad) > 0;
             auto st = satStatus.find(norad);
-            s->alive = st == satStatus.end() || st->second.empty() || st->second == "alive";
+            s->alive = st == satStatus.end() || satAlive(st->second);
             try {
                 s->tle = std::make_shared<libsgp4::Tle>(s->name, s->line1, s->line2);
                 s->sgp4 = std::make_shared<libsgp4::SGP4>(*s->tle);

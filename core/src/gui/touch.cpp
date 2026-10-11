@@ -22,6 +22,7 @@ namespace touch {
         TS_PENDING,  // finger down over a scrollable window, direction not known yet
         TS_PRESSED,  // forwarded to ImGui as a held mouse button
         TS_SCROLLING,
+        TS_SCROLLING_X,
         TS_PINCHING,
         TS_IGNORE    // rest of the gesture is swallowed (after a pinch)
     };
@@ -32,6 +33,8 @@ namespace touch {
     static double downTime = 0.0;
     static double lastMoveTime = 0.0;
     static ImGuiWindow* target = NULL;
+    static ImGuiWindow* targetX = NULL;   // innermost window under the finger that scrolls sideways (wide tables)
+    static float pendingScrollX = 0.0f;
     static float pendingScroll = 0.0f;
     static float velocity = 0.0f; // px/s, positive = content follows finger downwards
     static ImGuiWindow* flingTarget = NULL;
@@ -57,7 +60,7 @@ namespace touch {
 
     // Innermost visible window under pos that can scroll vertically.
     // Stops at popup / top-level windows so a combo list never scrolls the menu behind it.
-    static ImGuiWindow* findScrollable(ImVec2 pos) {
+    static ImGuiWindow* findScrollable(ImVec2 pos, bool horizontal = false) {
         ImGuiContext* ctx = ImGui::GetCurrentContext();
         if (!ctx) { return NULL; }
         ImGuiContext& g = *ctx;
@@ -74,7 +77,7 @@ namespace touch {
             // Only child windows (menu panels, lists) and popups (combo lists) scroll by touch;
             // the full-screen main window must never swallow waterfall gestures.
             bool scrollable = (hit->Flags & (ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Popup)) && !(hit->Flags & ImGuiWindowFlags_NoScrollWithMouse);
-            if (scrollable && hit->ScrollMax.y > 2.0f * style::uiScale) { return hit; }
+            if (scrollable && (horizontal ? hit->ScrollMax.x : hit->ScrollMax.y) > 2.0f * style::uiScale) { return hit; }
             if (!(hit->Flags & ImGuiWindowFlags_ChildWindow) || (hit->Flags & ImGuiWindowFlags_Popup)) { break; }
             hit = hit->ParentWindow;
         }
@@ -107,7 +110,9 @@ namespace touch {
         pendingScroll = 0.0f;
 
         target = findScrollable(p);
-        if (target) {
+        targetX = findScrollable(p, true);
+        pendingScrollX = 0.0f;
+        if (target || targetX) {
             // Show hover feedback, but hold the button back until we know the direction
             ImGui::GetIO().AddMousePosEvent(x, y);
             state = TS_PENDING;
@@ -124,12 +129,17 @@ namespace touch {
         switch (state) {
         case TS_PENDING: {
             float dx = fabsf(x - downPos.x), dy = fabsf(y - downPos.y);
-            if (dy > slop() && dy > dx) {
+            if (dy > slop() && dy > dx && target) {
                 state = TS_SCROLLING;
                 clearHover();
                 pendingScroll += y - lastPos.y;
             }
-            else if (dx > slop()) {
+            else if (dx > slop() && dx > dy && targetX) {
+                state = TS_SCROLLING_X;
+                clearHover();
+                pendingScrollX += x - lastPos.x;
+            }
+            else if (dx > slop() || dy > slop()) {
                 press(downPos, p);
             }
             break;
@@ -144,6 +154,9 @@ namespace touch {
             }
             break;
         }
+        case TS_SCROLLING_X:
+            pendingScrollX += x - lastPos.x;
+            break;
         case TS_PRESSED:
             ImGui::GetIO().AddMousePosEvent(x, y);
             break;
@@ -209,6 +222,7 @@ namespace touch {
 
     void cancel() {
         target = NULL;
+        targetX = NULL;
         pinch.active = false;
         if (!ready()) { flingTarget = NULL; state = TS_IDLE; return; }
         if (state == TS_PRESSED) { ImGui::GetIO().AddMouseButtonEvent(0, false); }
@@ -232,6 +246,10 @@ namespace touch {
             press(downPos, lastPos);
         }
 
+        if (state == TS_SCROLLING_X && targetX && pendingScrollX != 0.0f) {
+            ImGui::SetScrollX(targetX, std::clamp<float>(targetX->Scroll.x - pendingScrollX, 0.0f, targetX->ScrollMax.x));
+            pendingScrollX = 0.0f;
+        }
         if (state == TS_SCROLLING && target && pendingScroll != 0.0f) {
             ImGui::SetScrollY(target, std::clamp<float>(target->Scroll.y - pendingScroll, 0.0f, target->ScrollMax.y));
             pendingScroll = 0.0f;
